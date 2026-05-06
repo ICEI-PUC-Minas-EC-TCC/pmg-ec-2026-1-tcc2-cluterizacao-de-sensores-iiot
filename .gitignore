@@ -72,3 +72,6 @@ compile_commands.json
 .env
 .env.*
 !.env.example
+# Logs de monitor dos ESPs (gerados pelo flash_all.sh)
+logs/
+\*\.pdf\n\*\.PDF

@@ -1,7 +1,4 @@
-#include "WifiService/wifi_driver.hpp"
 #include "Application/application_controller.hpp"
-#include "LedService/led_controller.hpp"
-#include "MqttService/mqtt_controller.hpp"
 #include "nvs_flash.h"
 
 extern "C" {
@@ -13,9 +10,6 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    controller::led::init();
-    driver::wifi::init(); 
-    controller::mqtt::init(); 
     controller::application::init();
 }
 }
