@@ -68,17 +68,11 @@ void driver::wifi::init() {
                                                         NULL,
                                                         &instance_got_ip));
 
-    wifi_config_t wifi_config = {};
-    strcpy((char*)wifi_config.sta.ssid, CONFIG_WIFI_SSID);
-    strcpy((char*)wifi_config.sta.password, CONFIG_WIFI_PASSWORD);
-
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    wifi_config.sta.pmf_cfg.capable    = true;
-    wifi_config.sta.pmf_cfg.required   = false;
-    wifi_config.sta.sae_pwe_h2e        = WPA3_SAE_PWE_BOTH;
-
+    // No esp_wifi_set_config here on purpose: with credentials configured but
+    // STA disassociated, the driver does periodic background scans hopping
+    // across channels, which derails the ESP-NOW channel pinning below and
+    // kills inter-node broadcasts. We push set_config into connect().
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -90,6 +84,17 @@ void driver::wifi::connect() {
         return;
     }
     should_be_connected = true;
+
+    wifi_config_t wifi_config = {};
+    strcpy((char*)wifi_config.sta.ssid, CONFIG_WIFI_SSID);
+    strcpy((char*)wifi_config.sta.password, CONFIG_WIFI_PASSWORD);
+
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config.sta.pmf_cfg.capable    = true;
+    wifi_config.sta.pmf_cfg.required   = false;
+    wifi_config.sta.sae_pwe_h2e        = WPA3_SAE_PWE_BOTH;
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_LOGI(TAG, "Conectando ao AP...");
     esp_wifi_connect();
 }
