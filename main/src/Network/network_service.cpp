@@ -41,15 +41,21 @@ void handler() {
     driver::network::esp_now::handler();
 }
 
-void ping_received(Packet packet) {
+// Registers the sender as a peer on the first message of any kind from it,
+// so that discovery does not depend exclusively on broadcast PINGs (which
+// are lossier than unicast frames in Wi-Fi).
+static void register_sender_if_new(const uint8_t *src_mac) {
     MacAddr sender;
-    memcpy(sender.data(), packet.src_mac, sizeof(sender));
+    memcpy(sender.data(), src_mac, sizeof(sender));
 
     if (add_esp_peer(sender, 0) == ESP_OK) {
         known_peers.push_back(sender);
         service::application::role::on_peer_discovered();
     }
+}
 
+void ping_received(Packet packet) {
+    register_sender_if_new(packet.src_mac);
     ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR, MAC2STR(packet.src_mac));
 }
 
@@ -80,6 +86,8 @@ const std::vector<MacAddr>& get_known_peers() {
 }
 
 void reading_received(Packet packet) {
+    register_sender_if_new(packet.src_mac);
+
     ReadingPayload payload{};
     memcpy(&payload, packet.data, sizeof(payload));
 
@@ -117,6 +125,8 @@ void send_reading(MacAddr dest_mac, float temperature) {
 }
 
 void rotate_received(Packet packet) {
+    register_sender_if_new(packet.src_mac);
+
     RotatePayload payload{};
     memcpy(&payload, packet.data, sizeof(payload));
 

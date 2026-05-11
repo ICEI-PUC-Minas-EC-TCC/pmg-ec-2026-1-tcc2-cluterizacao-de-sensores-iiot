@@ -97,6 +97,15 @@ void on_peer_discovered() {
 }
 
 void on_rotate_received(MacAddr next_leader) {
+    // ROTATE is retransmitted up to ROTATE_RETRIES times by the sender to
+    // compensate for broadcast loss. Each retx must be idempotent: do not
+    // re-log nor reset the new leader's term timer when we already applied
+    // this rotation.
+    if (current_role != Role::UNDECIDED &&
+        memcmp(leader_mac.data(), next_leader.data(), 6) == 0) {
+        return;
+    }
+
     MacAddr own_mac = get_own_mac();
 
     leader_mac = next_leader;

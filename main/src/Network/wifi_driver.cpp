@@ -17,7 +17,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         esp_wifi_connect();
 
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "Conexao Wi-Fi perdida. Tentando reconexao...");
+        wifi_event_sta_disconnected_t* d = (wifi_event_sta_disconnected_t*) event_data;
+        ESP_LOGW(TAG, "Conexao Wi-Fi perdida (reason=%u). Tentando reconexao...", d->reason);
         controller::mqtt::set_wifi_status(false);
         esp_wifi_connect();
 
@@ -54,6 +55,11 @@ void driver::wifi::init() {
     wifi_config_t wifi_config = {};
     strcpy((char*)wifi_config.sta.ssid, CONFIG_WIFI_SSID);
     strcpy((char*)wifi_config.sta.password, CONFIG_WIFI_PASSWORD);
+
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config.sta.pmf_cfg.capable    = true;
+    wifi_config.sta.pmf_cfg.required   = false;
+    wifi_config.sta.sae_pwe_h2e        = WPA3_SAE_PWE_BOTH;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
