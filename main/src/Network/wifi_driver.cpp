@@ -9,6 +9,13 @@
 
 static const char* TAG = "WIFI_DRIVER";
 
+// ESP-NOW shares the radio with Wi-Fi and uses whatever channel the STA is
+// locked to. Without an active AP association the channel is undefined and
+// peers may end up on different channels, losing 100% of frames. We pin the
+// radio to the AP's channel at startup so ESP-NOW works regardless of which
+// node currently holds the leader role (and is associated to the AP).
+static constexpr uint8_t ESP_NOW_CHANNEL = 1;
+
 // Tracks the desired association state. Auto-reconnect on STA_DISCONNECTED
 // only fires when this is true; otherwise the disconnect was intentional
 // (e.g. we became MEMBER and don't want the AP association).
@@ -75,6 +82,7 @@ void driver::wifi::init() {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE));
 }
 
 void driver::wifi::connect() {
