@@ -21,6 +21,11 @@ void publish(const char *topic, const char *payload);
 
 void set_wifi_status(bool connected);
 
+// True while the Wi-Fi station is associated and has an IP. Used by the
+// application controller to skip publishes while a freshly-elected leader
+// is still warming up its Wi-Fi association.
+bool is_connected();
+
 }
 
 #endif
