@@ -1,6 +1,5 @@
 #include "Application/role_service.hpp"
 #include "Network/network_service.hpp"
-#include "Network/wifi_driver.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_wifi.h"
@@ -79,11 +78,9 @@ static void elect() {
     if (memcmp(own_mac.data(), smallest.data(), 6) == 0) {
         current_role = Role::LEADER;
         term_timer.reset();
-        driver::wifi::connect();
         ESP_LOGI(TAG, "Role: LEADER (" MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         current_role = Role::MEMBER;
-        driver::wifi::disconnect();
         ESP_LOGI(TAG, "Role: MEMBER (leader: " MACSTR ")", MAC2STR(smallest.data()));
     }
 }
@@ -116,11 +113,9 @@ void on_rotate_received(MacAddr next_leader) {
     if (memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
         current_role = Role::LEADER;
         term_timer.reset();
-        driver::wifi::connect();
         ESP_LOGI(TAG, "Role: LEADER (rotation, " MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         current_role = Role::MEMBER;
-        driver::wifi::disconnect();
         ESP_LOGI(TAG, "Role: MEMBER (new leader: " MACSTR ")", MAC2STR(next_leader.data()));
     }
 }
@@ -149,7 +144,6 @@ void handler() {
             stepping_down = false;
             leader_mac    = pending_next_leader;
             current_role  = Role::MEMBER;
-            driver::wifi::disconnect();
             ESP_LOGI(TAG, "Role: MEMBER (stepped down)");
         }
         return;

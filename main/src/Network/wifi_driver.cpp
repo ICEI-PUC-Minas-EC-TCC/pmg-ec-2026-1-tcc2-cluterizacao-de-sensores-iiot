@@ -9,34 +9,18 @@
 
 static const char* TAG = "WIFI_DRIVER";
 
-// ESP-NOW shares the radio with Wi-Fi and uses whatever channel the STA is
-// locked to. Without an active AP association the channel is undefined and
-// peers may end up on different channels, losing 100% of frames. We pin the
-// radio to the AP's channel at startup so ESP-NOW works regardless of which
-// node currently holds the leader role (and is associated to the AP).
-static constexpr uint8_t ESP_NOW_CHANNEL = 1;
-
-// Tracks the desired association state. Auto-reconnect on STA_DISCONNECTED
-// only fires when this is true; otherwise the disconnect was intentional
-// (e.g. we became MEMBER and don't want the AP association).
-static bool should_be_connected = false;
-
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data) {
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "Interface Wi-Fi iniciada.");
+        ESP_LOGI(TAG, "Interface Wi-Fi iniciada. Conectando ao AP...");
+        esp_wifi_connect();
 
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* d = (wifi_event_sta_disconnected_t*) event_data;
+        ESP_LOGW(TAG, "Conexao Wi-Fi perdida (reason=%u). Tentando reconexao...", d->reason);
         controller::mqtt::set_wifi_status(false);
-
-        if (should_be_connected) {
-            ESP_LOGW(TAG, "Conexao Wi-Fi perdida (reason=%u). Tentando reconexao...", d->reason);
-            esp_wifi_connect();
-        } else {
-            ESP_LOGI(TAG, "Wi-Fi desassociado (esperado, reason=%u).", d->reason);
-        }
+        esp_wifi_connect();
 
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
@@ -68,23 +52,6 @@ void driver::wifi::init() {
                                                         NULL,
                                                         &instance_got_ip));
 
-    // No esp_wifi_set_config here on purpose: with credentials configured but
-    // STA disassociated, the driver does periodic background scans hopping
-    // across channels, which derails the ESP-NOW channel pinning below and
-    // kills inter-node broadcasts. We push set_config into connect().
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE));
-}
-
-void driver::wifi::connect() {
-    if (should_be_connected) {
-        return;
-    }
-    should_be_connected = true;
-
     wifi_config_t wifi_config = {};
     strcpy((char*)wifi_config.sta.ssid, CONFIG_WIFI_SSID);
     strcpy((char*)wifi_config.sta.password, CONFIG_WIFI_PASSWORD);
@@ -94,34 +61,9 @@ void driver::wifi::connect() {
     wifi_config.sta.pmf_cfg.required   = false;
     wifi_config.sta.sae_pwe_h2e        = WPA3_SAE_PWE_BOTH;
 
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_LOGI(TAG, "Conectando ao AP...");
-    esp_wifi_connect();
-}
-
-void driver::wifi::disconnect() {
-    if (!should_be_connected) {
-        return;
-    }
-    should_be_connected = false;
-    ESP_LOGI(TAG, "Desassociando do AP...");
-    esp_wifi_disconnect();
-}
-
-void driver::wifi::keep_channel_pinned() {
-    if (should_be_connected) {
-        return;
-    }
-
-    uint8_t           primary;
-    wifi_second_chan_t second;
-    if (esp_wifi_get_channel(&primary, &second) != ESP_OK) {
-        return;
-    }
-
-    if (primary != ESP_NOW_CHANNEL) {
-        ESP_LOGW(TAG, "Canal ESP-NOW mudou para %u, re-pinando em %u",
-                 primary, ESP_NOW_CHANNEL);
-        esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
-    }
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    ESP_ERROR_CHECK(esp_wifi_start());
 }

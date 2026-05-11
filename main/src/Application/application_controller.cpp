@@ -6,7 +6,6 @@
 #include "Application/reading_service.hpp"
 #include "Application/role_service.hpp"
 #include "Network/network_service.hpp"
-#include "Network/wifi_driver.hpp"
 #include "MqttService/mqtt_controller.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,8 +36,6 @@ void controller::application::init() {
 
 void controller::application::handler(void *arg) {
     for (;;) {
-        driver::wifi::keep_channel_pinned();
-
         service::application::button::handler();
         service::application::discover::handler();
         service::application::role::handler();
@@ -71,42 +68,29 @@ static void handle_leader() {
     uint8_t own_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, own_mac);
 
-    bool mqtt_ready = controller::mqtt::is_connected();
-
     if (service::application::reading::has_new_reading()) {
         float temp = service::application::reading::get_last_reading();
 
-        if (mqtt_ready) {
-            snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
-                     own_mac[0], own_mac[1], own_mac[2],
-                     own_mac[3], own_mac[4], own_mac[5]);
-            snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
+        snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
+                 own_mac[0], own_mac[1], own_mac[2],
+                 own_mac[3], own_mac[4], own_mac[5]);
+        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
-            controller::mqtt::publish(topic, payload);
-            ESP_LOGI(TAG, "[LEADER] Published: %s -> %s", topic, payload);
-        } else {
-            ESP_LOGW(TAG, "[LEADER] MQTT not ready, dropping own reading %.1f C", temp);
-        }
+        controller::mqtt::publish(topic, payload);
+        ESP_LOGI(TAG, "[LEADER] Published: %s -> %s", topic, payload);
     }
 
     if (service::network::has_received_reading()) {
         float temp   = service::network::get_received_temperature();
         auto  sender = service::network::get_received_sender();
 
-        if (mqtt_ready) {
-            snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
-                     sender[0], sender[1], sender[2],
-                     sender[3], sender[4], sender[5]);
-            snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
+        snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
+                 sender[0], sender[1], sender[2],
+                 sender[3], sender[4], sender[5]);
+        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
-            controller::mqtt::publish(topic, payload);
-            ESP_LOGI(TAG, "[LEADER] Member reading: %s -> %s", topic, payload);
-        } else {
-            ESP_LOGW(TAG, "[LEADER] MQTT not ready, dropping member reading %.1f C from "
-                     "%02x%02x%02x%02x%02x%02x",
-                     temp, sender[0], sender[1], sender[2],
-                     sender[3], sender[4], sender[5]);
-        }
+        controller::mqtt::publish(topic, payload);
+        ESP_LOGI(TAG, "[LEADER] Member reading: %s -> %s", topic, payload);
     }
 }
 

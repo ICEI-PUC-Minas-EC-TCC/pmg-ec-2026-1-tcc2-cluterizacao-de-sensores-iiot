@@ -94,7 +94,3 @@ void controller::mqtt::set_wifi_status(bool connected) {
         xEventGroupClearBits(network_event_group, WIFI_CONNECTED_BIT);
     }
 }
-
-bool controller::mqtt::is_connected() {
-    return (xEventGroupGetBits(network_event_group) & WIFI_CONNECTED_BIT) != 0;
-}
