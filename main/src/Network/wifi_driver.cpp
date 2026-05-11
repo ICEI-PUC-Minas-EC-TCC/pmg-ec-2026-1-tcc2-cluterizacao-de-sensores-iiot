@@ -9,18 +9,27 @@
 
 static const char* TAG = "WIFI_DRIVER";
 
+// Tracks the desired association state. Auto-reconnect on STA_DISCONNECTED
+// only fires when this is true; otherwise the disconnect was intentional
+// (e.g. we became MEMBER and don't want the AP association).
+static bool should_be_connected = false;
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data) {
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "Interface Wi-Fi iniciada. Conectando ao AP...");
-        esp_wifi_connect();
+        ESP_LOGI(TAG, "Interface Wi-Fi iniciada.");
 
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* d = (wifi_event_sta_disconnected_t*) event_data;
-        ESP_LOGW(TAG, "Conexao Wi-Fi perdida (reason=%u). Tentando reconexao...", d->reason);
         controller::mqtt::set_wifi_status(false);
-        esp_wifi_connect();
+
+        if (should_be_connected) {
+            ESP_LOGW(TAG, "Conexao Wi-Fi perdida (reason=%u). Tentando reconexao...", d->reason);
+            esp_wifi_connect();
+        } else {
+            ESP_LOGI(TAG, "Wi-Fi desassociado (esperado, reason=%u).", d->reason);
+        }
 
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
@@ -66,4 +75,22 @@ void driver::wifi::init() {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+void driver::wifi::connect() {
+    if (should_be_connected) {
+        return;
+    }
+    should_be_connected = true;
+    ESP_LOGI(TAG, "Conectando ao AP...");
+    esp_wifi_connect();
+}
+
+void driver::wifi::disconnect() {
+    if (!should_be_connected) {
+        return;
+    }
+    should_be_connected = false;
+    ESP_LOGI(TAG, "Desassociando do AP...");
+    esp_wifi_disconnect();
 }

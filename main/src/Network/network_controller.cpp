@@ -43,6 +43,7 @@ static QueueHandle_t network_queue;
 
 void init() {
     driver::wifi::init();
+    driver::wifi::connect();
     driver::network::esp_now::init();
 
     service::network::init();
