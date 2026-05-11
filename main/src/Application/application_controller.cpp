@@ -6,6 +6,7 @@
 #include "Application/reading_service.hpp"
 #include "Application/role_service.hpp"
 #include "Network/network_service.hpp"
+#include "Network/wifi_driver.hpp"
 #include "MqttService/mqtt_controller.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -36,6 +37,8 @@ void controller::application::init() {
 
 void controller::application::handler(void *arg) {
     for (;;) {
+        driver::wifi::keep_channel_pinned();
+
         service::application::button::handler();
         service::application::discover::handler();
         service::application::role::handler();

@@ -107,3 +107,21 @@ void driver::wifi::disconnect() {
     ESP_LOGI(TAG, "Desassociando do AP...");
     esp_wifi_disconnect();
 }
+
+void driver::wifi::keep_channel_pinned() {
+    if (should_be_connected) {
+        return;
+    }
+
+    uint8_t           primary;
+    wifi_second_chan_t second;
+    if (esp_wifi_get_channel(&primary, &second) != ESP_OK) {
+        return;
+    }
+
+    if (primary != ESP_NOW_CHANNEL) {
+        ESP_LOGW(TAG, "Canal ESP-NOW mudou para %u, re-pinando em %u",
+                 primary, ESP_NOW_CHANNEL);
+        esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    }
+}
