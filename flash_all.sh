@@ -8,6 +8,49 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # ---------------------------------------------------------------------------
+# Parse flags. --policy <name> picks the leader rotation strategy at
+# build-time via Kconfig (CONFIG_LEADER_POLICY_*). Defaults to whatever is
+# already set in sdkconfig if absent.
+# ---------------------------------------------------------------------------
+POLICY=""
+
+usage() {
+    cat <<EOF
+Usage: $0 [--policy <round_robin|energy|energy_cooldown>] [--help]
+
+  --policy   Estrategia de eleicao de lider:
+               round_robin       (CONFIG_LEADER_POLICY_ROUND_ROBIN)
+               energy            (CONFIG_LEADER_POLICY_ENERGY)
+               energy_cooldown   (CONFIG_LEADER_POLICY_ENERGY_COOLDOWN)
+             Se omitido, mantem o sdkconfig atual.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --policy)
+            POLICY="${2:-}"
+            shift 2
+            ;;
+        --help|-h)
+            usage; exit 0
+            ;;
+        *)
+            echo -e "${RED}Argumento desconhecido: $1${NC}"
+            usage; exit 1
+            ;;
+    esac
+done
+
+case "$POLICY" in
+    ""|round_robin|energy|energy_cooldown) ;;
+    *)
+        echo -e "${RED}--policy invalido: $POLICY${NC}"
+        usage; exit 1
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Localiza e carrega o ambiente ESP-IDF
 # ---------------------------------------------------------------------------
 source_idf() {
@@ -61,6 +104,26 @@ echo -e "${GREEN}ESPs encontrados (${#PORTS[@]}):${NC} ${PORTS[*]}"
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+if [ -n "$POLICY" ]; then
+    SDKCONFIG="$SCRIPT_DIR/sdkconfig"
+    case "$POLICY" in
+        round_robin)     CONFIG_KEY="CONFIG_LEADER_POLICY_ROUND_ROBIN" ;;
+        energy)          CONFIG_KEY="CONFIG_LEADER_POLICY_ENERGY" ;;
+        energy_cooldown) CONFIG_KEY="CONFIG_LEADER_POLICY_ENERGY_COOLDOWN" ;;
+    esac
+    echo -e "${CYAN}Politica selecionada: ${POLICY} (${CONFIG_KEY})${NC}"
+
+    sed -i \
+        -e '/^CONFIG_LEADER_POLICY_ROUND_ROBIN=/d' \
+        -e '/^CONFIG_LEADER_POLICY_ENERGY=/d' \
+        -e '/^CONFIG_LEADER_POLICY_ENERGY_COOLDOWN=/d' \
+        -e '/^# CONFIG_LEADER_POLICY_ROUND_ROBIN is not set/d' \
+        -e '/^# CONFIG_LEADER_POLICY_ENERGY is not set/d' \
+        -e '/^# CONFIG_LEADER_POLICY_ENERGY_COOLDOWN is not set/d' \
+        "$SDKCONFIG"
+    echo "${CONFIG_KEY}=y" >> "$SDKCONFIG"
+fi
 
 echo -e "${YELLOW}▶ Compilando firmware...${NC}"
 idf.py build

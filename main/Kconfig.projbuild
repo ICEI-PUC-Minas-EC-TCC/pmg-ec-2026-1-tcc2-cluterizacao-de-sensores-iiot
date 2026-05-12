@@ -20,3 +20,32 @@ menu "MQTT Configuration"
         help
             Endereço do Broker MQTT.
 endmenu
+
+menu "Leader Election Policy"
+    choice LEADER_POLICY
+        prompt "Politica de rotacao de lideranca"
+        default LEADER_POLICY_ROUND_ROBIN
+        help
+            Estrategia usada pelo lider atual ao final do mandato para
+            decidir qual no assume a lideranca em seguida.
+
+        config LEADER_POLICY_ROUND_ROBIN
+            bool "Round-Robin (por MAC)"
+            help
+                Rotaciona em ordem crescente de MAC. Baseline neutro:
+                ignora energia, frequencia previsivel.
+
+        config LEADER_POLICY_ENERGY
+            bool "Maior energia residual"
+            help
+                Pica o no com maior energia residual conhecida. Balanceia
+                desgaste sem memoria de quem ja foi lider recentemente.
+
+        config LEADER_POLICY_ENERGY_COOLDOWN
+            bool "Maior energia residual + cooldown"
+            help
+                Pica o no com maior energia residual entre os que nao
+                foram lider nos ultimos 60s. Evita reentrancia rapida do
+                mesmo no.
+    endchoice
+endmenu

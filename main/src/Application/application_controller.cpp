@@ -3,6 +3,7 @@
 #include "Application/application_controller.hpp"
 #include "Application/button_service.hpp"
 #include "Application/discover_service.hpp"
+#include "Application/energy_service.hpp"
 #include "Application/reading_service.hpp"
 #include "Application/role_service.hpp"
 #include "Network/network_service.hpp"
@@ -27,6 +28,7 @@ void controller::application::init() {
 
     service::application::button::init();
     service::application::discover::init();
+    service::application::energy::init();
     service::application::role::init();
     service::application::reading::init();
 
@@ -38,6 +40,7 @@ void controller::application::handler(void *arg) {
     for (;;) {
         service::application::button::handler();
         service::application::discover::handler();
+        service::application::energy::tick();
         service::application::role::handler();
         service::application::reading::handler();
 
@@ -77,6 +80,7 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
         controller::mqtt::publish(topic, payload);
+        service::application::energy::on_mqtt_publish();
         ESP_LOGI(TAG, "[LEADER] Published: %s -> %s", topic, payload);
     }
 
@@ -90,6 +94,7 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
         controller::mqtt::publish(topic, payload);
+        service::application::energy::on_mqtt_publish();
         ESP_LOGI(TAG, "[LEADER] Member reading: %s -> %s", topic, payload);
     }
 }
@@ -103,5 +108,6 @@ static void handle_member() {
     auto  leader = service::application::role::get_leader_mac();
 
     service::network::send_reading(leader, temp);
+    service::application::energy::on_espnow_send();
     ESP_LOGI(TAG, "[MEMBER] Sent reading %.1f C to leader", temp);
 }

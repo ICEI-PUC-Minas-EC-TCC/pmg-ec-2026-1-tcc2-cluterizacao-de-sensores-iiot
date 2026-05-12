@@ -1,4 +1,5 @@
 #include "Application/role_service.hpp"
+#include "Application/leader_policy.hpp"
 #include "Network/network_service.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -78,6 +79,7 @@ static void elect() {
     if (memcmp(own_mac.data(), smallest.data(), 6) == 0) {
         current_role = Role::LEADER;
         term_timer.reset();
+        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (" MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         current_role = Role::MEMBER;
@@ -87,6 +89,7 @@ static void elect() {
 
 void init() {
     current_role = Role::UNDECIDED;
+    leader_policy::init();
     ESP_LOGI(TAG, "Waiting for peer discovery (%u ms)...", DISCOVERY_WINDOW_MS);
 }
 
@@ -133,6 +136,7 @@ void on_leader_announced(MacAddr announced_leader) {
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
             current_role = Role::LEADER;
             term_timer.reset();
+            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (from announcement, " MACSTR ")",
                      MAC2STR(own_mac.data()));
         } else {
@@ -151,6 +155,7 @@ void on_leader_announced(MacAddr announced_leader) {
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
             current_role = Role::LEADER;
             term_timer.reset();
+            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (resync, " MACSTR ")", MAC2STR(own_mac.data()));
         } else {
             ESP_LOGI(TAG, "Role: MEMBER (resync, new leader: " MACSTR ")",
@@ -178,6 +183,7 @@ void on_rotate_received(MacAddr next_leader) {
     if (memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
         current_role = Role::LEADER;
         term_timer.reset();
+        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (rotation, " MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         current_role = Role::MEMBER;
@@ -224,15 +230,19 @@ void handler() {
 
     auto    nodes   = sorted_cluster();
     MacAddr own_mac = get_own_mac();
+    MacAddr next    = leader_policy::pick_next_leader(nodes, own_mac);
 
-    auto it = std::find_if(nodes.begin(), nodes.end(), [&](const MacAddr &m) {
-        return memcmp(m.data(), own_mac.data(), 6) == 0;
-    });
+    if (memcmp(next.data(), own_mac.data(), 6) == 0) {
+        // Policy picked us again (e.g. RR with cluster of 1, or energy
+        // policy with no valid peer samples). Stay leader for another term
+        // instead of step-down to self.
+        term_timer.reset();
+        ESP_LOGI(TAG, "Term expired — policy kept leadership");
+        return;
+    }
 
-    size_t  idx  = (it != nodes.end()) ? (size_t)(it - nodes.begin()) : 0;
-    MacAddr next = nodes[(idx + 1) % nodes.size()];
-
-    ESP_LOGI(TAG, "Term expired — rotating to " MACSTR, MAC2STR(next.data()));
+    ESP_LOGI(TAG, "Term expired — rotating to " MACSTR " (policy: %s)",
+             MAC2STR(next.data()), leader_policy::strategy_name());
 
     // First transmission; remaining retries handled on subsequent handler calls.
     service::network::send_rotate(next);

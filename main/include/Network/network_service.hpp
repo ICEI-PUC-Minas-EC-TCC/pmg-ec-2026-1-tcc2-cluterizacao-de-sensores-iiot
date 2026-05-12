@@ -30,12 +30,16 @@ struct __attribute__((packed)) ReadingPayload {
     float temperature;
 };
 
-// Periodic broadcast carrying the sender's view of the current leader.
-// announced_leader is all-zero when the sender is UNDECIDED. Used to recover
-// from lost ROTATE messages: a node that missed the rotation will adopt the
-// leader announced here within one PING period.
+// Periodic broadcast carrying the sender's view of the current leader and
+// (when energy-based policies are active) its residual energy.
+// announced_leader is all-zero when the sender is UNDECIDED.
+// Field order chosen so uint32_t residual_energy sits at offset 0, naturally
+// aligned. With the previous layout (uint8_t[6] first) the uint32_t fell at
+// offset 6, and packed accesses to that field broke ESP-NOW reception on
+// ESP32-C3 (misaligned accesses inside the Wi-Fi/ESP-NOW path).
 struct __attribute__((packed)) PingPayload {
-    uint8_t announced_leader[6];
+    uint32_t residual_energy;
+    uint8_t  announced_leader[6];
 };
 
 // Broadcast by the current leader when its term expires.

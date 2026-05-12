@@ -1,4 +1,5 @@
 #include "Network/network_service.hpp"
+#include "Application/energy_service.hpp"
 #include "Application/role_service.hpp"
 #include "Network/esp_now_driver.hpp"
 #include "Network/network_controller.hpp"
@@ -63,16 +64,22 @@ void ping_received(Packet packet) {
     MacAddr announced{};
     memcpy(announced.data(), payload.announced_leader, sizeof(announced));
 
-    ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR " | leader=" MACSTR,
-             MAC2STR(packet.src_mac), MAC2STR(announced.data()));
+    MacAddr sender{};
+    memcpy(sender.data(), packet.src_mac, sizeof(sender));
+
+    ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR " | leader=" MACSTR " | energy=%u",
+             MAC2STR(packet.src_mac), MAC2STR(announced.data()),
+             (unsigned)payload.residual_energy);
 
     service::application::role::on_leader_announced(announced);
+    service::application::energy::on_peer_energy(sender, payload.residual_energy);
 }
 
 static std::array<uint8_t, sizeof(PingPayload)> build_ping_payload() {
     PingPayload payload{};
     MacAddr announced = service::application::role::get_announced_leader();
     memcpy(payload.announced_leader, announced.data(), sizeof(payload.announced_leader));
+    payload.residual_energy = service::application::energy::get_residual();
 
     std::array<uint8_t, sizeof(PingPayload)> data{};
     memcpy(data.data(), &payload, sizeof(payload));
