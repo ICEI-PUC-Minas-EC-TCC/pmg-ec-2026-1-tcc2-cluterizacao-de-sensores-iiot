@@ -96,6 +96,71 @@ void on_peer_discovered() {
     }
 }
 
+MacAddr get_announced_leader() {
+    MacAddr announced{};
+    switch (current_role) {
+    case Role::LEADER:
+        announced = get_own_mac();
+        break;
+    case Role::MEMBER:
+        announced = leader_mac;
+        break;
+    case Role::UNDECIDED:
+    default:
+        break;
+    }
+    return announced;
+}
+
+static bool is_zero_mac(const MacAddr &m) {
+    static const uint8_t zero[6] = {};
+    return memcmp(m.data(), zero, 6) == 0;
+}
+
+void on_leader_announced(MacAddr announced_leader) {
+    // Sender is UNDECIDED — nothing to learn.
+    if (is_zero_mac(announced_leader)) {
+        return;
+    }
+
+    MacAddr own_mac = get_own_mac();
+
+    // UNDECIDED: adopt the announcement directly, skipping the MAC-based
+    // fallback election. This is the path that resolves the post-rotation
+    // split-brain when the ROTATE itself was lost.
+    if (current_role == Role::UNDECIDED) {
+        leader_mac = announced_leader;
+        if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
+            current_role = Role::LEADER;
+            term_timer.reset();
+            ESP_LOGI(TAG, "Role: LEADER (from announcement, " MACSTR ")",
+                     MAC2STR(own_mac.data()));
+        } else {
+            current_role = Role::MEMBER;
+            ESP_LOGI(TAG, "Role: MEMBER (from announcement, leader: " MACSTR ")",
+                     MAC2STR(announced_leader.data()));
+        }
+        return;
+    }
+
+    // MEMBER with a stale view: trust the announcement and resync. Covers
+    // the case where this node missed a ROTATE while still being a member.
+    if (current_role == Role::MEMBER &&
+        memcmp(leader_mac.data(), announced_leader.data(), 6) != 0) {
+        leader_mac = announced_leader;
+        if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
+            current_role = Role::LEADER;
+            term_timer.reset();
+            ESP_LOGI(TAG, "Role: LEADER (resync, " MACSTR ")", MAC2STR(own_mac.data()));
+        } else {
+            ESP_LOGI(TAG, "Role: MEMBER (resync, new leader: " MACSTR ")",
+                     MAC2STR(announced_leader.data()));
+        }
+    }
+
+    // LEADER: trust local state; ignore announcements from stale peers.
+}
+
 void on_rotate_received(MacAddr next_leader) {
     // ROTATE is retransmitted up to ROTATE_RETRIES times by the sender to
     // compensate for broadcast loss. Each retx must be idempotent: do not

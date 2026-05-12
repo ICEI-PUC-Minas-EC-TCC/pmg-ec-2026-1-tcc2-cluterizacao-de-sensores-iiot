@@ -30,6 +30,14 @@ struct __attribute__((packed)) ReadingPayload {
     float temperature;
 };
 
+// Periodic broadcast carrying the sender's view of the current leader.
+// announced_leader is all-zero when the sender is UNDECIDED. Used to recover
+// from lost ROTATE messages: a node that missed the rotation will adopt the
+// leader announced here within one PING period.
+struct __attribute__((packed)) PingPayload {
+    uint8_t announced_leader[6];
+};
+
 // Broadcast by the current leader when its term expires.
 // Carries the MAC of the node that should assume leadership next.
 struct __attribute__((packed)) RotatePayload {

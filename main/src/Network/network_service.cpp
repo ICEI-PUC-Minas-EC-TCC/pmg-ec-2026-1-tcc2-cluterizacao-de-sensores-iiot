@@ -56,16 +56,36 @@ static void register_sender_if_new(const uint8_t *src_mac) {
 
 void ping_received(Packet packet) {
     register_sender_if_new(packet.src_mac);
-    ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR, MAC2STR(packet.src_mac));
+
+    PingPayload payload{};
+    memcpy(&payload, packet.data, sizeof(payload));
+
+    MacAddr announced{};
+    memcpy(announced.data(), payload.announced_leader, sizeof(announced));
+
+    ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR " | leader=" MACSTR,
+             MAC2STR(packet.src_mac), MAC2STR(announced.data()));
+
+    service::application::role::on_leader_announced(announced);
+}
+
+static std::array<uint8_t, sizeof(PingPayload)> build_ping_payload() {
+    PingPayload payload{};
+    MacAddr announced = service::application::role::get_announced_leader();
+    memcpy(payload.announced_leader, announced.data(), sizeof(payload.announced_leader));
+
+    std::array<uint8_t, sizeof(PingPayload)> data{};
+    memcpy(data.data(), &payload, sizeof(payload));
+    return data;
 }
 
 void ping_peer(MacAddr dest_mac) {
-    std::array<uint8_t, 1> data = {};
+    auto data = build_ping_payload();
     driver::network::esp_now::send_msg(RxCommand::PING, dest_mac, data);
 }
 
 void ping_broadcast() {
-    std::array<uint8_t, 1> data = {};
+    auto data = build_ping_payload();
     driver::network::esp_now::send_broadcast(RxCommand::PING, data);
 }
 
@@ -156,7 +176,12 @@ void send_rotate(MacAddr next_leader) {
     std::array<uint8_t, sizeof(RotatePayload)> data{};
     memcpy(data.data(), &payload, sizeof(payload));
 
-    driver::network::esp_now::send_broadcast(RxCommand::ROTATE, data);
+    // Unicast (not broadcast): broadcasts in 2.4 GHz drop heavily in lossy
+    // links because they lack MAC-layer ACK/retry. Sending ROTATE directly
+    // to the elected next leader leverages ESP-NOW's hardware retry and
+    // makes rotation reliable even when one node is channel-hopping due to
+    // Wi-Fi reconnect backoff.
+    driver::network::esp_now::send_msg(RxCommand::ROTATE, next_leader, data);
 }
 
 } // namespace service::network
