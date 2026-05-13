@@ -103,7 +103,12 @@ MacAddr get_announced_leader() {
     MacAddr announced{};
     switch (current_role) {
     case Role::LEADER:
-        announced = get_own_mac();
+        // While stepping down the local role is still LEADER but a successor
+        // has already been picked. Announcing the pending successor (instead
+        // of self) keeps observers consistent across the step-down window:
+        // otherwise N>=3 members oscillate between old and new leader for
+        // the ~2 s that ROTATE retries take to drain.
+        announced = stepping_down ? pending_next_leader : get_own_mac();
         break;
     case Role::MEMBER:
         announced = leader_mac;
