@@ -6,7 +6,7 @@ static const char *TAG = "READING_SERVICE";
 
 namespace service::application::reading {
 
-static constexpr uint32_t READING_INTERVAL_MS = 5000;
+static constexpr uint32_t READING_INTERVAL_MS = 2000;
 static constexpr float    TEMP_MIN  = 20.0f;
 static constexpr float    TEMP_MAX  = 29.0f;
 static constexpr float    TEMP_STEP =  1.0f;

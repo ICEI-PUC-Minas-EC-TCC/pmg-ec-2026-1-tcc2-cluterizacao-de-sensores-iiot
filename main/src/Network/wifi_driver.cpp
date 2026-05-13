@@ -13,7 +13,7 @@ static const char* TAG = "WIFI_DRIVER";
 
 // Exponential backoff schedule (ms) for STA reconnect attempts.
 // Reset to index 0 on successful association.
-static const uint32_t BACKOFF_MS[] = {1000, 2000, 5000, 10000, 30000};
+static const uint32_t BACKOFF_MS[] = {500, 1000, 2000, 3000, 5000};
 static constexpr size_t BACKOFF_LEN = sizeof(BACKOFF_MS) / sizeof(BACKOFF_MS[0]);
 
 static size_t        backoff_idx     = 0;

@@ -20,10 +20,10 @@ static Role    current_role = Role::UNDECIDED;
 static MacAddr leader_mac{};
 
 // Minimum time to wait for peer discovery before forcing an election.
-static constexpr uint32_t DISCOVERY_WINDOW_MS = 5000;
+static constexpr uint32_t DISCOVERY_WINDOW_MS = 2000;
 
 // Duration each node holds the leader role before rotating (Round-Robin).
-static constexpr uint32_t TERM_DURATION_MS = 30000;
+static constexpr uint32_t TERM_DURATION_MS = 10000;
 
 // ROTATE retransmission to compensate for ESP-NOW broadcast packet loss.
 // With ~20% reception rate, 10 retries at 200ms gives ~89% delivery probability.

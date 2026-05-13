@@ -27,8 +27,8 @@ static const char *STRATEGY_NAME   = "round_robin";
 #endif
 
 // Cooldown duration after a node holds leadership before it can be picked
-// again. 60 s = 2 mandates with TERM_DURATION_MS = 30 s.
-static constexpr uint32_t COOLDOWN_MS = 60'000;
+// again. 20 s = 2 mandates with TERM_DURATION_MS = 10 s.
+static constexpr uint32_t COOLDOWN_MS = 20'000;
 
 static uint64_t mac_to_key(MacAddr mac) {
     uint64_t k = 0;
