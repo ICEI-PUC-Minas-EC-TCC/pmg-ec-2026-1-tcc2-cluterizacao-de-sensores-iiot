@@ -93,12 +93,6 @@ void init() {
     ESP_LOGI(TAG, "Waiting for peer discovery (%u ms)...", DISCOVERY_WINDOW_MS);
 }
 
-void on_peer_discovered() {
-    if (current_role == Role::UNDECIDED) {
-        elect();
-    }
-}
-
 MacAddr get_announced_leader() {
     MacAddr announced{};
     switch (current_role) {

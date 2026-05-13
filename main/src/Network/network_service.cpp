@@ -51,7 +51,6 @@ static void register_sender_if_new(const uint8_t *src_mac) {
 
     if (add_esp_peer(sender, 0) == ESP_OK) {
         known_peers.push_back(sender);
-        service::application::role::on_peer_discovered();
     }
 }
 
