@@ -48,4 +48,53 @@ menu "Leader Election Policy"
                 foram lider nos ultimos 60s. Evita reentrancia rapida do
                 mesmo no.
     endchoice
+menu "Ammeter Configuration"
+    config AMMETER_SAMPLE_INTERVAL_MS
+        int "Intervalo de amostragem (ms)"
+        range 200 60000
+        default 1000
+        help
+            Define o intervalo entre medições de corrente.
+
+    config AMMETER_ADC_AVG_SAMPLES
+        int "Quantidade de amostras para media do ADC"
+        range 1 256
+        default 32
+        help
+            Reduz ruido medindo varias vezes e calculando a media.
+
+    config AMMETER_SHUNT_OHMS_X1000
+        int "Resistor shunt (miliohms)"
+        range 1 10000
+        default 100
+        help
+            Valor do shunt em miliohms. Exemplo: 0.1 ohm = 100 miliohms.
+
+    config AMMETER_AMPLIFIER_GAIN_X100
+        int "Ganho do amplificador (x100)"
+        range 1 10000
+        default 1100
+        help
+            Ganho do amp-op multiplicado por 100. Exemplo: 11x = 1100.
+
+    config AMMETER_BATTERY_VOLTAGE_MV
+        int "Tensao nominal da bateria (mV)"
+        range 1000 6000
+        default 3700
+        help
+            Tensao utilizada para estimar potencia a partir da corrente.
+
+    config AMMETER_BATTERY_CAPACITY_MAH
+        int "Capacidade nominal da bateria (mAh)"
+        range 1 20000
+        default 1000
+        help
+            Capacidade total usada para estimar carga residual.
+
+    config AMMETER_ADC_DEFAULT_VREF_MV
+        int "Vref ADC fallback (mV)"
+        range 900 1300
+        default 1100
+        help
+            Usado somente quando a calibracao do ADC nao estiver disponivel.
 endmenu

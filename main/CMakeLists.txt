@@ -9,5 +9,5 @@ idf_component_register(
         "include"
         
     REQUIRES 
-        mqtt driver nvs_flash esp_wifi
+        mqtt driver nvs_flash esp_wifi esp_adc
 )

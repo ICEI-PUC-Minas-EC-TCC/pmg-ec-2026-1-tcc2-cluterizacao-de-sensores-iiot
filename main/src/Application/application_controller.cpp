@@ -1,5 +1,6 @@
 #include "LedService/led_controller.hpp"
 #include "Network/network_controller.hpp"
+#include "AmmeterService/ammeter_service.hpp"
 #include "Application/application_controller.hpp"
 #include "Application/button_service.hpp"
 #include "Application/discover_service.hpp"
@@ -11,7 +12,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "esp_mac.h"
 #include "esp_wifi.h"
 
 #include <cstdio>
@@ -25,6 +25,7 @@ void controller::application::init() {
     controller::led::init();
     controller::network::init();
     controller::mqtt::init();
+    service::ammeter::init();
 
     service::application::button::init();
     service::application::discover::init();
@@ -43,6 +44,7 @@ void controller::application::handler(void *arg) {
         service::application::energy::tick();
         service::application::role::handler();
         service::application::reading::handler();
+        service::ammeter::handler();
 
         if (service::network::has_received_rotate()) {
             service::application::role::on_rotate_received(
@@ -66,18 +68,30 @@ void controller::application::handler(void *arg) {
 
 static void handle_leader() {
     char topic[64];
-    char payload[64];
+    char payload[256];
 
     uint8_t own_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, own_mac);
 
-    if (service::application::reading::has_new_reading()) {
+    bool has_new_temperature = service::application::reading::has_new_reading();
+    bool has_new_current     = service::ammeter::has_new_measurement();
+
+    if (has_new_temperature || has_new_current) {
         float temp = service::application::reading::get_last_reading();
+        auto measurement = service::ammeter::get_last_measurement();
 
         snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
                  own_mac[0], own_mac[1], own_mac[2],
                  own_mac[3], own_mac[4], own_mac[5]);
-        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
+        snprintf(payload,
+                 sizeof(payload),
+                 "{\"temperature\": %.1f, \"current_ma\": %.2f, \"power_mw\": %.2f, \"consumed_mah\": %.3f, \"remaining_mah\": %.3f, \"battery_pct\": %.2f}",
+                 temp,
+                 measurement.current_ma,
+                 measurement.power_mw,
+                 measurement.consumed_mah,
+                 measurement.remaining_mah,
+                 measurement.battery_pct);
 
         controller::mqtt::publish(topic, payload);
         service::application::energy::on_mqtt_publish();
