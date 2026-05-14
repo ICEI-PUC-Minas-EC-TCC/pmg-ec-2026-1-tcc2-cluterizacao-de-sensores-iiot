@@ -22,7 +22,8 @@ void controller::led::handler(void *arg) {
         if (xQueueReceive(led_queue, &cmd, portMAX_DELAY)) {
             switch (cmd.type) {
             case LED_CMD_SET:
-                driver::led::set_gpio(STATUS_LED_PIN, cmd.value);
+                // On-board LED on these C3 boards is active-low: drive 0 to light it.
+                driver::led::set_gpio(STATUS_LED_PIN, !cmd.value);
                 break;
             }
         }
