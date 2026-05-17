@@ -78,6 +78,9 @@ static MacAddr pick_round_robin(const std::vector<MacAddr> &cluster,
 
 // Highest residual energy wins. Ties broken by MAC order. Falls back to
 // round-robin when no peer in the cluster has a fresh energy sample.
+// The current leader is excluded from the candidate set so a node never
+// re-elects itself — without this, a node bootstrapping with full energy
+// would latch leadership until its budget drops below every peer's.
 static MacAddr pick_energy(const std::vector<MacAddr> &cluster,
                            MacAddr current_leader,
                            bool exclude_in_cooldown) {
@@ -89,6 +92,9 @@ static MacAddr pick_energy(const std::vector<MacAddr> &cluster,
     esp_wifi_get_mac(WIFI_IF_STA, own_mac.data());
 
     for (const auto &mac : cluster) {
+        if (memcmp(mac.data(), current_leader.data(), 6) == 0) {
+            continue;
+        }
         if (exclude_in_cooldown && in_cooldown(mac)) {
             continue;
         }
