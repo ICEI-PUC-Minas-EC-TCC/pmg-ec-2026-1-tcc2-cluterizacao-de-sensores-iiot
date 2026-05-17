@@ -89,11 +89,11 @@ static void elect() {
     }
 
     leader_mac = smallest;
+    leader_policy::on_became_leader(smallest);
 
     if (memcmp(own_mac.data(), smallest.data(), 6) == 0) {
         set_role(Role::LEADER);
         term_timer.reset();
-        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (" MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         set_role(Role::MEMBER);
@@ -146,10 +146,10 @@ void on_leader_announced(MacAddr announced_leader) {
     // split-brain when the ROTATE itself was lost.
     if (current_role == Role::UNDECIDED) {
         leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
             set_role(Role::LEADER);
             term_timer.reset();
-            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (from announcement, " MACSTR ")",
                      MAC2STR(own_mac.data()));
         } else {
@@ -165,10 +165,10 @@ void on_leader_announced(MacAddr announced_leader) {
     if (current_role == Role::MEMBER &&
         memcmp(leader_mac.data(), announced_leader.data(), 6) != 0) {
         leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
             set_role(Role::LEADER);
             term_timer.reset();
-            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (resync, " MACSTR ")", MAC2STR(own_mac.data()));
         } else {
             ESP_LOGI(TAG, "Role: MEMBER (resync, new leader: " MACSTR ")",
@@ -192,11 +192,11 @@ void on_rotate_received(MacAddr next_leader) {
     MacAddr own_mac = get_own_mac();
 
     leader_mac = next_leader;
+    leader_policy::on_became_leader(next_leader);
 
     if (memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
         set_role(Role::LEADER);
         term_timer.reset();
-        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (rotation, " MACSTR ")", MAC2STR(own_mac.data()));
     } else {
         set_role(Role::MEMBER);
