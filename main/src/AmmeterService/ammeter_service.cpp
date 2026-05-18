@@ -7,103 +7,111 @@
 #include "esp_timer.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace service::ammeter {
 
-#ifndef CONFIG_AMMETER_SAMPLE_INTERVAL_MS
-#define CONFIG_AMMETER_SAMPLE_INTERVAL_MS 1000
-#endif
-#ifndef CONFIG_AMMETER_ADC_AVG_SAMPLES
-#define CONFIG_AMMETER_ADC_AVG_SAMPLES 32
-#endif
-#ifndef CONFIG_AMMETER_SHUNT_OHMS_X1000
-#define CONFIG_AMMETER_SHUNT_OHMS_X1000 100
-#endif
-#ifndef CONFIG_AMMETER_AMPLIFIER_GAIN_X100
-#define CONFIG_AMMETER_AMPLIFIER_GAIN_X100 1100
-#endif
-#ifndef CONFIG_AMMETER_BATTERY_VOLTAGE_MV
-#define CONFIG_AMMETER_BATTERY_VOLTAGE_MV 3700
-#endif
-#ifndef CONFIG_AMMETER_BATTERY_CAPACITY_MAH
-#define CONFIG_AMMETER_BATTERY_CAPACITY_MAH 1000
-#endif
-#ifndef CONFIG_AMMETER_ADC_DEFAULT_VREF_MV
-#define CONFIG_AMMETER_ADC_DEFAULT_VREF_MV 1100
-#endif
-
 static const char *TAG = "AMMETER_SERVICE";
 
+// ================= CONFIG =================
 static constexpr adc_unit_t ADC_UNIT = ADC_UNIT_1;
-static constexpr adc_channel_t ADC_CHANNEL = ADC_CHANNEL_0;
+
+// Canal da corrente (amplificador)
+static constexpr adc_channel_t ADC_CHANNEL_CURRENT = ADC_CHANNEL_0;
+
+// Canal da tensão da bateria
+static constexpr adc_channel_t ADC_CHANNEL_VBAT = ADC_CHANNEL_3;
+
 static constexpr adc_atten_t ADC_ATTEN = ADC_ATTEN_DB_12;
 
-static constexpr uint32_t SAMPLE_INTERVAL_MS = CONFIG_AMMETER_SAMPLE_INTERVAL_MS;
-static constexpr int AVG_SAMPLES = CONFIG_AMMETER_ADC_AVG_SAMPLES;
+static constexpr uint32_t SAMPLE_INTERVAL_MS = 200;
+static constexpr int AVG_SAMPLES = 32;
 
-static constexpr float SHUNT_OHMS = static_cast<float>(CONFIG_AMMETER_SHUNT_OHMS_X1000) / 1000.0f;
-static constexpr float AMPLIFIER_GAIN = static_cast<float>(CONFIG_AMMETER_AMPLIFIER_GAIN_X100) / 100.0f;
-static constexpr float BATTERY_VOLTAGE_V = static_cast<float>(CONFIG_AMMETER_BATTERY_VOLTAGE_MV) / 1000.0f;
-static constexpr float BATTERY_CAPACITY_MAH = static_cast<float>(CONFIG_AMMETER_BATTERY_CAPACITY_MAH);
-static constexpr float ADC_DEFAULT_VREF_V = static_cast<float>(CONFIG_AMMETER_ADC_DEFAULT_VREF_MV) / 1000.0f;
+// Hardware
+static constexpr float SHUNT_OHMS = 0.1f;
+static constexpr float AMPLIFIER_GAIN = 11.0f;
+
+// Divisor de tensão da bateria (ex: 100k / 100k)
+static constexpr float VBAT_DIVIDER_RATIO = 2.0f;
+
+// Capacidade
+static constexpr float BATTERY_CAPACITY_MAH = 1000.0f;
+
+// Filtro
+static constexpr float EMA_ALPHA = 0.2f;
+
+// ================= ESTADO =================
 
 static adc_oneshot_unit_handle_t adc_handle = nullptr;
 static adc_cali_handle_t adc_cali_handle = nullptr;
 static bool adc_cali_enabled = false;
+
 static bool initialized = false;
 static bool new_measurement_available = false;
 
 static Measurement last_measurement{};
+
 static int64_t last_sample_time_us = 0;
+
+// offset do sensor (auto calibrado)
+static float current_offset_a = 0.0f;
+static bool offset_initialized = false;
+
+// ================= UTIL =================
 
 static int adc_raw_to_mv(int raw) {
     int voltage_mv = 0;
 
-    if (adc_cali_enabled) {
-        if (adc_cali_raw_to_voltage(adc_cali_handle, raw, &voltage_mv) == ESP_OK) {
-            return voltage_mv;
-        }
-        ESP_LOGW(TAG, "ADC calibration conversion failed, using fallback Vref");
+    if (adc_cali_enabled &&
+        adc_cali_raw_to_voltage(adc_cali_handle, raw, &voltage_mv) == ESP_OK) {
+        return voltage_mv;
     }
 
-    // Fallback linear conversion when calibration is unavailable.
-    voltage_mv = static_cast<int>((static_cast<float>(raw) / 4095.0f) * ADC_DEFAULT_VREF_V * 1000.0f);
-    return voltage_mv;
+    // fallback simples
+    return (raw * 1100) / 4095;
 }
+
+static int read_adc_avg(adc_channel_t channel) {
+    int64_t sum = 0;
+
+    for (int i = 0; i < AVG_SAMPLES; ++i) {
+        int raw = 0;
+        if (adc_oneshot_read(adc_handle, channel, &raw) == ESP_OK) {
+            sum += raw;
+        }
+    }
+
+    return sum / std::max(AVG_SAMPLES, 1);
+}
+
+// ================= INIT =================
 
 void init() {
     adc_oneshot_unit_init_cfg_t unit_cfg = {
         .unit_id = ADC_UNIT,
-        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
     };
+
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&unit_cfg, &adc_handle));
 
     adc_oneshot_chan_cfg_t channel_cfg = {
         .atten = ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, ADC_CHANNEL, &channel_cfg));
+
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, ADC_CHANNEL_CURRENT,
+                                               &channel_cfg));
+    ESP_ERROR_CHECK(
+        adc_oneshot_config_channel(adc_handle, ADC_CHANNEL_VBAT, &channel_cfg));
 
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     adc_cali_curve_fitting_config_t cali_cfg = {
         .unit_id = ADC_UNIT,
-        .chan = ADC_CHANNEL,
         .atten = ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
-    if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &adc_cali_handle) == ESP_OK) {
-        adc_cali_enabled = true;
-    }
-#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    adc_cali_line_fitting_config_t cali_cfg = {
-        .unit_id = ADC_UNIT,
-        .chan = ADC_CHANNEL,
-        .atten = ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .default_vref = CONFIG_AMMETER_ADC_DEFAULT_VREF_MV,
-    };
-    if (adc_cali_create_scheme_line_fitting(&cali_cfg, &adc_cali_handle) == ESP_OK) {
+
+    if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &adc_cali_handle) ==
+        ESP_OK) {
         adc_cali_enabled = true;
     }
 #endif
@@ -115,84 +123,95 @@ void init() {
     last_sample_time_us = esp_timer_get_time();
     initialized = true;
 
-    ESP_LOGI(TAG,
-             "Initialized | shunt=%.3f ohm gain=%.2f Vbat=%.3fV capacity=%.0fmAh calibration=%s",
-             SHUNT_OHMS,
-             AMPLIFIER_GAIN,
-             BATTERY_VOLTAGE_V,
-             BATTERY_CAPACITY_MAH,
-             adc_cali_enabled ? "on" : "off");
+    ESP_LOGI(TAG, "Initialized");
 }
+
+// ================= HANDLER =================
 
 void handler() {
-    if (!initialized) {
+    if (!initialized)
         return;
-    }
 
-    const int64_t now_us = esp_timer_get_time();
-    const int64_t elapsed_us = now_us - last_sample_time_us;
+    const int64_t now = esp_timer_get_time();
+    const int64_t elapsed_us = now - last_sample_time_us;
 
-    if (elapsed_us < static_cast<int64_t>(SAMPLE_INTERVAL_MS) * 1000LL) {
+    if (elapsed_us < SAMPLE_INTERVAL_MS * 1000)
         return;
+
+    // ================= LEITURA =================
+
+    int raw_current = read_adc_avg(ADC_CHANNEL_CURRENT);
+    int raw_vbat = read_adc_avg(ADC_CHANNEL_VBAT);
+
+    float v_amp = adc_raw_to_mv(raw_current) / 1000.0f;
+    float vbat = (adc_raw_to_mv(raw_vbat) / 1000.0f) * VBAT_DIVIDER_RATIO;
+
+    float v_shunt = v_amp / AMPLIFIER_GAIN;
+    float current_a = v_shunt / SHUNT_OHMS;
+
+    // ================= OFFSET =================
+
+    if (!offset_initialized) {
+        current_offset_a = current_a;
+        offset_initialized = true;
     }
 
-    int raw_sum = 0;
-    for (int i = 0; i < AVG_SAMPLES; ++i) {
-        int raw = 0;
-        if (adc_oneshot_read(adc_handle, ADC_CHANNEL, &raw) == ESP_OK) {
-            raw_sum += raw;
-        }
+    current_a -= current_offset_a;
+
+    // zona morta
+    if (std::fabs(current_a) < 0.002f) {
+        current_a = 0.0f;
     }
 
-    const int raw_avg = raw_sum / std::max(AVG_SAMPLES, 1);
-    const int amp_out_mv = adc_raw_to_mv(raw_avg);
+    // ================= FILTRO =================
 
-    const float amp_out_v = static_cast<float>(amp_out_mv) / 1000.0f;
-    const float shunt_v = amp_out_v / AMPLIFIER_GAIN;
-    const float current_a = std::max(shunt_v / SHUNT_OHMS, 0.0f);
-    const float power_w = current_a * BATTERY_VOLTAGE_V;
+    static float filtered_current = 0.0f;
+    filtered_current =
+        (EMA_ALPHA * current_a) + (1.0f - EMA_ALPHA) * filtered_current;
 
-    const float elapsed_h = static_cast<float>(elapsed_us) / 3600000000.0f;
-    const float delta_mah = current_a * 1000.0f * elapsed_h;
-    const float delta_mwh = power_w * 1000.0f * elapsed_h;
+    // ================= POTÊNCIA =================
 
-    last_measurement.current_ma = current_a * 1000.0f;
+    float power_w = filtered_current * vbat;
+
+    // ================= INTEGRAÇÃO =================
+
+    float elapsed_h = elapsed_us / 3600000000.0f;
+
+    float delta_mah = filtered_current * 1000.0f * elapsed_h;
+    float delta_mwh = power_w * 1000.0f * elapsed_h;
+
+    last_measurement.current_ma = filtered_current * 1000.0f;
     last_measurement.power_mw = power_w * 1000.0f;
+
     last_measurement.consumed_mah += delta_mah;
     last_measurement.consumed_mwh += delta_mwh;
-    last_measurement.remaining_mah = std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah, 0.0f);
 
-    if (BATTERY_CAPACITY_MAH > 0.0f) {
-        last_measurement.battery_pct = (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
-    } else {
-        last_measurement.battery_pct = 0.0f;
-    }
+    last_measurement.remaining_mah =
+        std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah, 0.0f);
 
-    last_measurement.adc_raw = raw_avg;
-    last_measurement.adc_mv = amp_out_mv;
+    last_measurement.battery_pct =
+        (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
 
-    last_sample_time_us = now_us;
+    last_measurement.adc_raw = raw_current;
+    last_measurement.adc_mv = adc_raw_to_mv(raw_current);
+
+    last_sample_time_us = now;
     new_measurement_available = true;
 
-    ESP_LOGI(TAG,
-             "I=%.2f mA P=%.2f mW Consumed=%.3f mAh Remaining=%.2f%% (raw=%d, mv=%d)",
-             last_measurement.current_ma,
-             last_measurement.power_mw,
-             last_measurement.consumed_mah,
-             last_measurement.battery_pct,
-             last_measurement.adc_raw,
-             last_measurement.adc_mv);
+    ESP_LOGI(TAG, "I=%.2fmA V=%.2fV P=%.2fmW Rem=%.1f%%",
+             last_measurement.current_ma, vbat, last_measurement.power_mw,
+             last_measurement.battery_pct);
 }
+
+// ================= GETTERS =================
 
 Measurement get_last_measurement() {
     return last_measurement;
 }
 
 bool has_new_measurement() {
-    if (!new_measurement_available) {
+    if (!new_measurement_available)
         return false;
-    }
-
     new_measurement_available = false;
     return true;
 }
