@@ -49,9 +49,6 @@ void register_rx_callback(void (*func)(Packet), RxCommand cmd) {
 }
 
 void rx_callback(const esp_now_recv_info_t *info, const uint8_t *data, int size) {
-    ESP_LOGI(__FUNCTION__, "Received from " MACSTR " | size=%d",
-             MAC2STR(info->src_addr), size);
-
     if (size != sizeof(Packet)) {
         ESP_LOGW(__FUNCTION__, "Unexpected size: %d (expected %d)", size, (int)sizeof(Packet));
     }
@@ -70,7 +67,7 @@ void send_callback(const wifi_tx_info_t *info, esp_now_send_status_t status) {
         return;
     }
     if (status == ESP_NOW_SEND_SUCCESS) {
-        ESP_LOGI(__FUNCTION__, "Sent to " MACSTR " OK", MAC2STR(info->des_addr));
+        return;
     } else {
         ESP_LOGW(__FUNCTION__, "Send failed to " MACSTR, MAC2STR(info->des_addr));
     }
@@ -154,9 +151,6 @@ void handler_departure() {
     }
 
     memcpy(buffer, &packet, sizeof(buffer));
-
-    ESP_LOGI(__FUNCTION__, "Sending to " MACSTR " | cmd=%u",
-             MAC2STR(packet.dest_mac), packet.command);
 
     esp_err_t ret = esp_now_send(packet.dest_mac, buffer, sizeof(buffer));
     if (ret == ESP_ERR_ESPNOW_NOT_FOUND) {

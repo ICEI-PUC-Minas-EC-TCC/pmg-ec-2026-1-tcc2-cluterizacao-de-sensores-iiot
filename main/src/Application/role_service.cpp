@@ -1,8 +1,10 @@
 #include "Application/role_service.hpp"
 #include "Application/leader_policy.hpp"
+#include "LedService/led_controller.hpp"
 #include "Network/network_service.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
 #include "utils.hpp"
 
@@ -25,6 +27,11 @@ static constexpr uint32_t DISCOVERY_WINDOW_MS = 2000;
 // Duration each node holds the leader role before rotating (Round-Robin).
 static constexpr uint32_t TERM_DURATION_MS = 10000;
 
+// Self-reboot when no peer has been seen this long: recovers from boot-time
+// Wi-Fi scan loops that desync the ESP-NOW channel and leave the node
+// silently unable to hear or be heard.
+static constexpr uint32_t ISOLATION_TIMEOUT_MS = 60000;
+
 // ROTATE retransmission to compensate for ESP-NOW broadcast packet loss.
 // With ~20% reception rate, 10 retries at 200ms gives ~89% delivery probability.
 static constexpr uint8_t  ROTATE_RETRIES  = 10;
@@ -42,6 +49,13 @@ static MacAddr get_own_mac() {
     MacAddr mac{};
     esp_wifi_get_mac(WIFI_IF_STA, mac.data());
     return mac;
+}
+
+// Single point of truth for role transitions: keeps the status LED in sync so
+// the LED can't drift out of phase with the actual role.
+static void set_role(Role new_role) {
+    current_role = new_role;
+    controller::led::set_status(new_role == Role::LEADER);
 }
 
 // Returns all cluster nodes (self + known peers) sorted by MAC ascending.
@@ -75,20 +89,20 @@ static void elect() {
     }
 
     leader_mac = smallest;
+    leader_policy::on_became_leader(smallest);
 
     if (memcmp(own_mac.data(), smallest.data(), 6) == 0) {
-        current_role = Role::LEADER;
+        set_role(Role::LEADER);
         term_timer.reset();
-        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (" MACSTR ")", MAC2STR(own_mac.data()));
     } else {
-        current_role = Role::MEMBER;
+        set_role(Role::MEMBER);
         ESP_LOGI(TAG, "Role: MEMBER (leader: " MACSTR ")", MAC2STR(smallest.data()));
     }
 }
 
 void init() {
-    current_role = Role::UNDECIDED;
+    set_role(Role::UNDECIDED);
     leader_policy::init();
     ESP_LOGI(TAG, "Waiting for peer discovery (%u ms)...", DISCOVERY_WINDOW_MS);
 }
@@ -132,14 +146,14 @@ void on_leader_announced(MacAddr announced_leader) {
     // split-brain when the ROTATE itself was lost.
     if (current_role == Role::UNDECIDED) {
         leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
-            current_role = Role::LEADER;
+            set_role(Role::LEADER);
             term_timer.reset();
-            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (from announcement, " MACSTR ")",
                      MAC2STR(own_mac.data()));
         } else {
-            current_role = Role::MEMBER;
+            set_role(Role::MEMBER);
             ESP_LOGI(TAG, "Role: MEMBER (from announcement, leader: " MACSTR ")",
                      MAC2STR(announced_leader.data()));
         }
@@ -151,10 +165,10 @@ void on_leader_announced(MacAddr announced_leader) {
     if (current_role == Role::MEMBER &&
         memcmp(leader_mac.data(), announced_leader.data(), 6) != 0) {
         leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
         if (memcmp(own_mac.data(), announced_leader.data(), 6) == 0) {
-            current_role = Role::LEADER;
+            set_role(Role::LEADER);
             term_timer.reset();
-            leader_policy::on_became_leader(own_mac);
             ESP_LOGI(TAG, "Role: LEADER (resync, " MACSTR ")", MAC2STR(own_mac.data()));
         } else {
             ESP_LOGI(TAG, "Role: MEMBER (resync, new leader: " MACSTR ")",
@@ -178,19 +192,27 @@ void on_rotate_received(MacAddr next_leader) {
     MacAddr own_mac = get_own_mac();
 
     leader_mac = next_leader;
+    leader_policy::on_became_leader(next_leader);
 
     if (memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
-        current_role = Role::LEADER;
+        set_role(Role::LEADER);
         term_timer.reset();
-        leader_policy::on_became_leader(own_mac);
         ESP_LOGI(TAG, "Role: LEADER (rotation, " MACSTR ")", MAC2STR(own_mac.data()));
     } else {
-        current_role = Role::MEMBER;
+        set_role(Role::MEMBER);
         ESP_LOGI(TAG, "Role: MEMBER (new leader: " MACSTR ")", MAC2STR(next_leader.data()));
     }
 }
 
 void handler() {
+    static utils::Timer isolation_timer;
+    if (current_role == Role::UNDECIDED &&
+        service::network::get_known_peers().empty() &&
+        isolation_timer.hasElapsed(ISOLATION_TIMEOUT_MS)) {
+        ESP_LOGE(TAG, "Isolated for %u ms — restarting", ISOLATION_TIMEOUT_MS);
+        esp_restart();
+    }
+
     if (current_role == Role::UNDECIDED) {
         // Periodic fallback in case the first peer ping is missed.
         static utils::Timer discovery_timer;
@@ -213,7 +235,7 @@ void handler() {
         } else {
             stepping_down = false;
             leader_mac    = pending_next_leader;
-            current_role  = Role::MEMBER;
+            set_role(Role::MEMBER);
             ESP_LOGI(TAG, "Role: MEMBER (stepped down)");
         }
         return;
