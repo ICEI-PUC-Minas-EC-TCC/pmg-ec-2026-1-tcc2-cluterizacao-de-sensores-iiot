@@ -66,10 +66,6 @@ void ping_received(Packet packet) {
     MacAddr sender{};
     memcpy(sender.data(), packet.src_mac, sizeof(sender));
 
-    ESP_LOGI(__FUNCTION__, "Ping received from " MACSTR " | leader=" MACSTR " | energy=%u",
-             MAC2STR(packet.src_mac), MAC2STR(announced.data()),
-             (unsigned)payload.residual_energy);
-
     service::application::role::on_leader_announced(announced);
     service::application::energy::on_peer_energy(sender, payload.residual_energy);
 }
@@ -120,9 +116,6 @@ void reading_received(Packet packet) {
     received_temperature = payload.temperature;
     memcpy(received_sender.data(), packet.src_mac, sizeof(received_sender));
     reading_available = true;
-
-    ESP_LOGI(__FUNCTION__, "Reading from " MACSTR ": %.1f C",
-             MAC2STR(packet.src_mac), payload.temperature);
 }
 
 bool has_received_reading() {
@@ -158,9 +151,6 @@ void rotate_received(Packet packet) {
 
     memcpy(rotate_next_leader.data(), payload.next_leader, sizeof(rotate_next_leader));
     rotate_available = true;
-
-    ESP_LOGI(__FUNCTION__, "Rotate received: next leader " MACSTR,
-             MAC2STR(payload.next_leader));
 }
 
 bool has_received_rotate() {

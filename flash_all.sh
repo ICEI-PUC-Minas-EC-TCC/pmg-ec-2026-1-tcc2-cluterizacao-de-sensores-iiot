@@ -66,7 +66,7 @@ source_idf() {
         if [ -f "$f" ]; then
             echo -e "${CYAN}Carregando ESP-IDF de $f${NC}"
             # shellcheck disable=SC1090
-            source "$f" > /dev/null 2>&1
+            source "$f"
             return 0
         fi
     done
@@ -212,6 +212,8 @@ open_monitor() {
         "$IDF_EXPORT" "$PORT" "$LOG_FILE")"
 
     case "$TERM_BIN" in
+        ptyxis)
+            ptyxis --title "$TITLE" -- bash -c "$CMD" ;;
         kitty)
             kitty --title "$TITLE" -- bash -c "$CMD" ;;
         alacritty)
