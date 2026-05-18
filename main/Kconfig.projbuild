@@ -48,6 +48,8 @@ menu "Leader Election Policy"
                 foram lider nos ultimos 60s. Evita reentrancia rapida do
                 mesmo no.
     endchoice
+endmenu
+
 menu "Ammeter Configuration"
     config AMMETER_SAMPLE_INTERVAL_MS
         int "Intervalo de amostragem (ms)"
