@@ -5,6 +5,7 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,29 +14,35 @@ namespace service::ammeter {
 
 static const char *TAG = "AMMETER_SERVICE";
 
-// ================= CONFIG =================
+// ================= CONFIG (via Kconfig) =================
 static constexpr adc_unit_t ADC_UNIT = ADC_UNIT_1;
 
-// Canal da corrente (amplificador)
+// Canal da corrente (amplificador) -> GPIO0 no ESP32-C3
 static constexpr adc_channel_t ADC_CHANNEL_CURRENT = ADC_CHANNEL_0;
 
-// Canal da tensão da bateria
+// Canal da tensão da bateria -> GPIO3 no ESP32-C3
 static constexpr adc_channel_t ADC_CHANNEL_VBAT = ADC_CHANNEL_3;
 
 static constexpr adc_atten_t ADC_ATTEN = ADC_ATTEN_DB_12;
 
-static constexpr uint32_t SAMPLE_INTERVAL_MS = 200;
-static constexpr int AVG_SAMPLES = 32;
+static constexpr uint32_t SAMPLE_INTERVAL_MS = CONFIG_AMMETER_SAMPLE_INTERVAL_MS;
+static constexpr int AVG_SAMPLES = CONFIG_AMMETER_ADC_AVG_SAMPLES;
 
-// Hardware
-static constexpr float SHUNT_OHMS = 0.1f;
-static constexpr float AMPLIFIER_GAIN = 11.0f;
+// Hardware (Kconfig)
+static constexpr float SHUNT_OHMS = CONFIG_AMMETER_SHUNT_OHMS_X1000 / 1000.0f;
+static constexpr float AMPLIFIER_GAIN = CONFIG_AMMETER_AMPLIFIER_GAIN_X100 / 100.0f;
 
 // Divisor de tensão da bateria (ex: 100k / 100k)
 static constexpr float VBAT_DIVIDER_RATIO = 2.0f;
 
-// Capacidade
-static constexpr float BATTERY_CAPACITY_MAH = 1000.0f;
+// Tensao nominal usada quando o divisor de VBAT nao esta montado
+static constexpr float NOMINAL_VBAT_V = CONFIG_AMMETER_BATTERY_VOLTAGE_MV / 1000.0f;
+
+// Capacidade (Kconfig)
+static constexpr float BATTERY_CAPACITY_MAH = CONFIG_AMMETER_BATTERY_CAPACITY_MAH;
+
+// Vref fallback do ADC (quando a calibracao curve-fitting nao esta disponivel)
+static constexpr int ADC_DEFAULT_VREF_MV = CONFIG_AMMETER_ADC_DEFAULT_VREF_MV;
 
 // Filtro
 static constexpr float EMA_ALPHA = 0.2f;
@@ -53,9 +60,11 @@ static Measurement last_measurement{};
 
 static int64_t last_sample_time_us = 0;
 
-// offset do sensor (auto calibrado)
+#if CONFIG_AMMETER_AUTO_ZERO_ON_BOOT
+// offset do sensor (auto calibrado na 1a leitura - opt-in)
 static float current_offset_a = 0.0f;
 static bool offset_initialized = false;
+#endif
 
 // ================= UTIL =================
 
@@ -68,7 +77,7 @@ static int adc_raw_to_mv(int raw) {
     }
 
     // fallback simples
-    return (raw * 1100) / 4095;
+    return (raw * ADC_DEFAULT_VREF_MV) / 4095;
 }
 
 static int read_adc_avg(adc_channel_t channel) {
@@ -141,25 +150,38 @@ void handler() {
     // ================= LEITURA =================
 
     int raw_current = read_adc_avg(ADC_CHANNEL_CURRENT);
-    int raw_vbat = read_adc_avg(ADC_CHANNEL_VBAT);
+    int adc_mv_current = adc_raw_to_mv(raw_current);
 
-    float v_amp = adc_raw_to_mv(raw_current) / 1000.0f;
+#if CONFIG_AMMETER_USE_VBAT_DIVIDER
+    int raw_vbat = read_adc_avg(ADC_CHANNEL_VBAT);
     float vbat = (adc_raw_to_mv(raw_vbat) / 1000.0f) * VBAT_DIVIDER_RATIO;
+#else
+    float vbat = NOMINAL_VBAT_V;
+#endif
+
+    // Offset fixo do AMPOP, calibrado em bancada com I=0.
+    // Subtraido em mV no dominio da saida do amplificador, antes do
+    // ganho/shunt, para evitar baseline dependente do consumo no boot.
+    float v_amp = (adc_mv_current - CONFIG_AMMETER_OFFSET_MV) / 1000.0f;
 
     float v_shunt = v_amp / AMPLIFIER_GAIN;
     float current_a = v_shunt / SHUNT_OHMS;
 
-    // ================= OFFSET =================
+    // ================= OFFSET (auto-zero opt-in / legacy) =================
 
+#if CONFIG_AMMETER_AUTO_ZERO_ON_BOOT
     if (!offset_initialized) {
         current_offset_a = current_a;
         offset_initialized = true;
+        ESP_LOGW(TAG, "Auto-zero capturado no boot: offset=%.3fmA",
+                 current_offset_a * 1000.0f);
     }
-
     current_a -= current_offset_a;
+#endif
 
-    // zona morta
-    if (std::fabs(current_a) < 0.002f) {
+    // Zona morta configuravel (uA -> A)
+    constexpr float DEAD_ZONE_A = CONFIG_AMMETER_DEAD_ZONE_UA / 1000000.0f;
+    if (DEAD_ZONE_A > 0.0f && std::fabs(current_a) < DEAD_ZONE_A) {
         current_a = 0.0f;
     }
 
@@ -193,14 +215,18 @@ void handler() {
         (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
 
     last_measurement.adc_raw = raw_current;
-    last_measurement.adc_mv = adc_raw_to_mv(raw_current);
+    last_measurement.adc_mv = adc_mv_current;
 
     last_sample_time_us = now;
     new_measurement_available = true;
 
-    ESP_LOGI(TAG, "I=%.2fmA V=%.2fV P=%.2fmW Rem=%.1f%%",
+    // adc_mv e offset incluidos no log para facilitar a calibracao:
+    // rode o gear com I=0, leia adc_mv e ajuste CONFIG_AMMETER_OFFSET_MV.
+    ESP_LOGI(TAG,
+             "I=%.2fmA V=%.2fV P=%.2fmW Rem=%.1f%% adc_mv=%d (offset=%dmV)",
              last_measurement.current_ma, vbat, last_measurement.power_mw,
-             last_measurement.battery_pct);
+             last_measurement.battery_pct, adc_mv_current,
+             CONFIG_AMMETER_OFFSET_MV);
 }
 
 // ================= GETTERS =================

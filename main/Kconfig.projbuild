@@ -53,8 +53,8 @@ endmenu
 menu "Ammeter Configuration"
     config AMMETER_SAMPLE_INTERVAL_MS
         int "Intervalo de amostragem (ms)"
-        range 200 60000
-        default 1000
+        range 50 60000
+        default 200
         help
             Define o intervalo entre medições de corrente.
 
@@ -99,4 +99,44 @@ menu "Ammeter Configuration"
         default 1100
         help
             Usado somente quando a calibracao do ADC nao estiver disponivel.
+
+    config AMMETER_OFFSET_MV
+        int "Offset do amplificador (mV) com I=0"
+        range -3300 3300
+        default 0
+        help
+            Tensao de saida do AMPOP quando a corrente real e zero
+            (calibrado em bancada). Subtraido antes do calculo de
+            corrente para que as leituras sejam absolutas, nao
+            relativas ao boot. Procedimento: alimente o circuito sem
+            corrente real fluindo pelo shunt, observe adc_mv no log
+            do AMMETER_SERVICE, e ajuste aqui (mesma unidade).
+
+    config AMMETER_AUTO_ZERO_ON_BOOT
+        bool "Capturar offset na 1a leitura (legacy)"
+        default n
+        help
+            Se y, a primeira leitura apos boot vira o zero do sensor.
+            Em operacao normal o ESP ja esta consumindo nesse instante,
+            entao essa flag mascara o consumo absoluto. Manter desligado
+            e usar AMMETER_OFFSET_MV em vez disso. Mantido apenas para
+            comparacao com o comportamento original.
+
+    config AMMETER_USE_VBAT_DIVIDER
+        bool "Medir VBAT via divisor de tensao no canal 3"
+        default y
+        help
+            Se n, usa AMMETER_BATTERY_VOLTAGE_MV como tensao fixa para
+            o calculo de potencia e percentual de bateria. Util para
+            gears sem o divisor de VBAT montado (ex: bancada inicial).
+
+    config AMMETER_DEAD_ZONE_UA
+        int "Zona morta da leitura (uA)"
+        range 0 50000
+        default 500
+        help
+            Leituras com valor absoluto menor que esta zona sao
+            zeradas, filtrando ruido residual proximo do zero. Default
+            500uA (0.5mA). Configure 0 para desabilitar e ver o ruido
+            cru durante a calibracao.
 endmenu
