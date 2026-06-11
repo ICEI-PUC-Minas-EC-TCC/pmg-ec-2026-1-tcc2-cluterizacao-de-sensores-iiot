@@ -1,3 +1,7 @@
+#include "sdkconfig.h"
+
+#ifndef CONFIG_AMMETER_BACKEND_INA219
+
 #include "AmmeterService/ammeter_service.hpp"
 
 #include "esp_adc/adc_cali.h"
@@ -5,7 +9,6 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "sdkconfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -243,3 +246,5 @@ bool has_new_measurement() {
 }
 
 } // namespace service::ammeter
+
+#endif // CONFIG_AMMETER_BACKEND_INA219

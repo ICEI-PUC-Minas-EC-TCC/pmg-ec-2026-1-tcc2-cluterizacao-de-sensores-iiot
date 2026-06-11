@@ -51,40 +51,34 @@ menu "Leader Election Policy"
 endmenu
 
 menu "Ammeter Configuration"
+
+    choice AMMETER_BACKEND
+        prompt "Backend de medicao de corrente"
+        default AMMETER_BACKEND_ADC
+        help
+            Seleciona o hardware utilizado para medir a corrente.
+
+        config AMMETER_BACKEND_ADC
+            bool "ADC interno + resistor shunt + amp-op"
+            help
+                Usa o ADC do ESP32 com um resistor shunt externo e
+                amplificador operacional. Requer fiacao analogica.
+
+        config AMMETER_BACKEND_INA219
+            bool "INA219 via I2C"
+            help
+                Usa o sensor INA219 conectado via I2C. Nao requer
+                amp-op externo. Maior precisao e interface digital.
+    endchoice
+
+    # -------- Opcoes comuns --------
+
     config AMMETER_SAMPLE_INTERVAL_MS
         int "Intervalo de amostragem (ms)"
         range 50 60000
         default 200
         help
-            Define o intervalo entre medições de corrente.
-
-    config AMMETER_ADC_AVG_SAMPLES
-        int "Quantidade de amostras para media do ADC"
-        range 1 256
-        default 32
-        help
-            Reduz ruido medindo varias vezes e calculando a media.
-
-    config AMMETER_SHUNT_OHMS_X1000
-        int "Resistor shunt (miliohms)"
-        range 1 10000
-        default 100
-        help
-            Valor do shunt em miliohms. Exemplo: 0.1 ohm = 100 miliohms.
-
-    config AMMETER_AMPLIFIER_GAIN_X100
-        int "Ganho do amplificador (x100)"
-        range 1 10000
-        default 1100
-        help
-            Ganho do amp-op multiplicado por 100. Exemplo: 11x = 1100.
-
-    config AMMETER_BATTERY_VOLTAGE_MV
-        int "Tensao nominal da bateria (mV)"
-        range 1000 6000
-        default 3700
-        help
-            Tensao utilizada para estimar potencia a partir da corrente.
+            Define o intervalo entre medicoes de corrente.
 
     config AMMETER_BATTERY_CAPACITY_MAH
         int "Capacidade nominal da bateria (mAh)"
@@ -93,7 +87,51 @@ menu "Ammeter Configuration"
         help
             Capacidade total usada para estimar carga residual.
 
+    config AMMETER_DEAD_ZONE_UA
+        int "Zona morta da leitura (uA)"
+        range 0 50000
+        default 500
+        help
+            Leituras com valor absoluto menor que esta zona sao
+            zeradas, filtrando ruido residual proximo do zero. Configure
+            0 para ver o ruido cru durante a calibracao.
+
+    # -------- Backend: ADC + shunt + amp-op --------
+
+    config AMMETER_ADC_AVG_SAMPLES
+        depends on AMMETER_BACKEND_ADC
+        int "Quantidade de amostras para media do ADC"
+        range 1 256
+        default 32
+        help
+            Reduz ruido medindo varias vezes e calculando a media.
+
+    config AMMETER_SHUNT_OHMS_X1000
+        depends on AMMETER_BACKEND_ADC
+        int "Resistor shunt (miliohms)"
+        range 1 10000
+        default 100
+        help
+            Valor do shunt em miliohms. Exemplo: 0.1 ohm = 100 miliohms.
+
+    config AMMETER_AMPLIFIER_GAIN_X100
+        depends on AMMETER_BACKEND_ADC
+        int "Ganho do amplificador (x100)"
+        range 1 10000
+        default 1100
+        help
+            Ganho do amp-op multiplicado por 100. Exemplo: 11x = 1100.
+
+    config AMMETER_BATTERY_VOLTAGE_MV
+        depends on AMMETER_BACKEND_ADC
+        int "Tensao nominal da bateria (mV)"
+        range 1000 6000
+        default 3700
+        help
+            Tensao utilizada para estimar potencia a partir da corrente.
+
     config AMMETER_ADC_DEFAULT_VREF_MV
+        depends on AMMETER_BACKEND_ADC
         int "Vref ADC fallback (mV)"
         range 900 1300
         default 1100
@@ -101,6 +139,7 @@ menu "Ammeter Configuration"
             Usado somente quando a calibracao do ADC nao estiver disponivel.
 
     config AMMETER_OFFSET_MV
+        depends on AMMETER_BACKEND_ADC
         int "Offset do amplificador (mV) com I=0"
         range -3300 3300
         default 0
@@ -108,35 +147,75 @@ menu "Ammeter Configuration"
             Tensao de saida do AMPOP quando a corrente real e zero
             (calibrado em bancada). Subtraido antes do calculo de
             corrente para que as leituras sejam absolutas, nao
-            relativas ao boot. Procedimento: alimente o circuito sem
-            corrente real fluindo pelo shunt, observe adc_mv no log
-            do AMMETER_SERVICE, e ajuste aqui (mesma unidade).
+            relativas ao boot.
 
     config AMMETER_AUTO_ZERO_ON_BOOT
+        depends on AMMETER_BACKEND_ADC
         bool "Capturar offset na 1a leitura (legacy)"
         default n
         help
             Se y, a primeira leitura apos boot vira o zero do sensor.
             Em operacao normal o ESP ja esta consumindo nesse instante,
-            entao essa flag mascara o consumo absoluto. Manter desligado
-            e usar AMMETER_OFFSET_MV em vez disso. Mantido apenas para
-            comparacao com o comportamento original.
+            entao essa flag mascara o consumo absoluto. Mantido apenas
+            para comparacao com o comportamento original.
 
     config AMMETER_USE_VBAT_DIVIDER
+        depends on AMMETER_BACKEND_ADC
         bool "Medir VBAT via divisor de tensao no canal 3"
         default y
         help
             Se n, usa AMMETER_BATTERY_VOLTAGE_MV como tensao fixa para
-            o calculo de potencia e percentual de bateria. Util para
-            gears sem o divisor de VBAT montado (ex: bancada inicial).
+            o calculo de potencia e percentual de bateria.
 
-    config AMMETER_DEAD_ZONE_UA
-        int "Zona morta da leitura (uA)"
-        range 0 50000
-        default 500
+    # -------- Backend: INA219 via I2C --------
+
+    config AMMETER_INA219_SDA_GPIO
+        depends on AMMETER_BACKEND_INA219
+        int "GPIO do SDA (I2C)"
+        range 0 21
+        default 4
         help
-            Leituras com valor absoluto menor que esta zona sao
-            zeradas, filtrando ruido residual proximo do zero. Default
-            500uA (0.5mA). Configure 0 para desabilitar e ver o ruido
-            cru durante a calibracao.
+            Pino GPIO conectado ao SDA do INA219. GPIO4 recomendado no
+            SuperMini (GPIO8 e GPIO9 conflitam com LED e BOOT button).
+
+    config AMMETER_INA219_SCL_GPIO
+        depends on AMMETER_BACKEND_INA219
+        int "GPIO do SCL (I2C)"
+        range 0 21
+        default 5
+        help
+            Pino GPIO conectado ao SCL do INA219. GPIO5 recomendado no
+            SuperMini (GPIO8 e GPIO9 conflitam com LED e BOOT button).
+
+    config AMMETER_INA219_ADDR
+        depends on AMMETER_BACKEND_INA219
+        hex "Endereco I2C do INA219"
+        range 0x40 0x4F
+        default 0x40
+        help
+            Endereco I2C do INA219 (0x40 a 0x4F conforme A0/A1).
+            A0=GND A1=GND -> 0x40 (padrao de fabrica).
+            A0=VCC A1=GND -> 0x41.
+            A0=GND A1=VCC -> 0x44.
+
+    config AMMETER_INA219_MAX_CURRENT_MA
+        depends on AMMETER_BACKEND_INA219
+        int "Corrente maxima esperada (mA)"
+        range 1 10000
+        default 1000
+        help
+            Define o Current_LSB e o registrador de calibracao.
+            Use o pico maximo do seu circuito (ex: 1000 para 1A).
+            Maior valor = menor resolucao. Menor valor = maior precisao.
+
+    config AMMETER_INA219_SHUNT_OHMS_X1000
+        depends on AMMETER_BACKEND_INA219
+        int "Resistor shunt do INA219 (miliohms)"
+        range 1 10000
+        default 100
+        help
+            Resistor shunt em miliohms. Os modulos INA219 de prateleira
+            (Adafruit, generico) tipicamente usam 100 mOhm (0.1 Ohm).
+            Verifique a silk do seu modulo.
+
 endmenu
