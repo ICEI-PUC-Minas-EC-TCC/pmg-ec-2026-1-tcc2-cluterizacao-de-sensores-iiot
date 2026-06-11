@@ -13,15 +13,21 @@ NC='\033[0m'
 # already set in sdkconfig if absent.
 # ---------------------------------------------------------------------------
 POLICY=""
+BACKEND=""
 
 usage() {
     cat <<EOF
-Usage: $0 [--policy <round_robin|energy|energy_cooldown>] [--help]
+Usage: $0 [--policy <round_robin|energy|energy_cooldown>] [--backend <adc|ina219>] [--help]
 
   --policy   Estrategia de eleicao de lider:
                round_robin       (CONFIG_LEADER_POLICY_ROUND_ROBIN)
                energy            (CONFIG_LEADER_POLICY_ENERGY)
                energy_cooldown   (CONFIG_LEADER_POLICY_ENERGY_COOLDOWN)
+             Se omitido, mantem o sdkconfig atual.
+
+  --backend  Hardware de medicao de corrente:
+               adc               ADC interno + shunt + amp-op (CONFIG_AMMETER_BACKEND_ADC)
+               ina219            Sensor INA219 via I2C        (CONFIG_AMMETER_BACKEND_INA219)
              Se omitido, mantem o sdkconfig atual.
 EOF
 }
@@ -30,6 +36,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --policy)
             POLICY="${2:-}"
+            shift 2
+            ;;
+        --backend)
+            BACKEND="${2:-}"
             shift 2
             ;;
         --help|-h)
@@ -46,6 +56,14 @@ case "$POLICY" in
     ""|round_robin|energy|energy_cooldown) ;;
     *)
         echo -e "${RED}--policy invalido: $POLICY${NC}"
+        usage; exit 1
+        ;;
+esac
+
+case "$BACKEND" in
+    ""|adc|ina219) ;;
+    *)
+        echo -e "${RED}--backend invalido: $BACKEND${NC}"
         usage; exit 1
         ;;
 esac
@@ -125,9 +143,42 @@ if [ -n "$POLICY" ]; then
     echo "${CONFIG_KEY}=y" >> "$SDKCONFIG"
 fi
 
+if [ -n "$BACKEND" ]; then
+    SDKCONFIG="$SCRIPT_DIR/sdkconfig"
+    case "$BACKEND" in
+        adc)    BACKEND_KEY="CONFIG_AMMETER_BACKEND_ADC" ;;
+        ina219) BACKEND_KEY="CONFIG_AMMETER_BACKEND_INA219" ;;
+    esac
+    echo -e "${CYAN}Backend selecionado: ${BACKEND} (${BACKEND_KEY})${NC}"
+
+    sed -i \
+        -e '/^CONFIG_AMMETER_BACKEND_ADC=/d' \
+        -e '/^CONFIG_AMMETER_BACKEND_INA219=/d' \
+        -e '/^# CONFIG_AMMETER_BACKEND_ADC is not set/d' \
+        -e '/^# CONFIG_AMMETER_BACKEND_INA219 is not set/d' \
+        "$SDKCONFIG"
+    echo "${BACKEND_KEY}=y" >> "$SDKCONFIG"
+fi
+
 echo -e "${YELLOW}▶ Compilando firmware...${NC}"
-idf.py build
+if ! idf.py build; then
+    echo -e "${YELLOW}⚠ Build falhou — sdkconfig pode ter mudado. Fazendo fullclean e tentando novamente...${NC}"
+    idf.py fullclean
+    idf.py build
+fi
 echo -e "${GREEN}✔ Build concluído.${NC}"
+
+# ---------------------------------------------------------------------------
+# Libera portas: mata monitores seriais que estejam com as portas abertas
+# ---------------------------------------------------------------------------
+for PORT in "${PORTS[@]}"; do
+    PIDS_PORT=$(fuser "$PORT" 2>/dev/null) || true
+    if [ -n "$PIDS_PORT" ]; then
+        echo -e "${YELLOW}⚠ Liberando $PORT (monitor aberto — PIDs: $PIDS_PORT)...${NC}"
+        kill $PIDS_PORT 2>/dev/null
+        sleep 0.5
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # Flash em paralelo (usa esptool direto para evitar conflito de build lock)
