@@ -1,3 +1,4 @@
+#include "LedService/led_controller.hpp"
 #include "sdkconfig.h"
 
 #ifdef CONFIG_AMMETER_BACKEND_INA219
@@ -66,6 +67,9 @@ static esp_err_t read_reg(uint8_t reg, int16_t *out) {
 // ---------- init ----------
 
 void init() {
+
+    ESP_LOGW(__FUNCTION__, "Im here");
+
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port      = I2C_NUM_0,
         .sda_io_num    = (gpio_num_t)CONFIG_AMMETER_INA219_SDA_GPIO,
@@ -135,6 +139,8 @@ void init() {
              CONFIG_AMMETER_INA219_SDA_GPIO, CONFIG_AMMETER_INA219_SCL_GPIO,
              CONFIG_AMMETER_INA219_ADDR, SHUNT_OHMS,
              MAX_CURRENT_A * 1000.0f, cal, current_lsb_ma);
+
+    controller::led::set_status(true);
 }
 
 // ---------- handler ----------

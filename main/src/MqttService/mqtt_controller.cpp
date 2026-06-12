@@ -1,4 +1,5 @@
 #include "MqttService/mqtt_controller.hpp"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -38,6 +39,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 void controller::mqtt::init(void) {
+    esp_err_t ret;
     mqtt_queue = xQueueCreate(10, sizeof(mqtt_msg_t));
     network_event_group = xEventGroupCreate();
 
@@ -45,8 +47,17 @@ void controller::mqtt::init(void) {
     mqtt_cfg.broker.address.uri = CONFIG_MQTT_BROKER_URI;
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
-    esp_mqtt_client_start(mqtt_client);
+    ret = esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(__FUNCTION__, "register event: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = esp_mqtt_client_start(mqtt_client);
+    if (ret != ESP_OK) {
+        ESP_LOGE(__FUNCTION__, "client start: %s", esp_err_to_name(ret));
+        return;
+    }
 
     xTaskCreate(controller::mqtt::handler, "mqtt_controller", 4096, NULL, 5, NULL);
 }

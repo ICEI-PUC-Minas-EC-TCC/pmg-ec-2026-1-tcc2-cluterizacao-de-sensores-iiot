@@ -39,28 +39,28 @@ void controller::application::init() {
 
 void controller::application::handler(void *arg) {
     for (;;) {
-        service::application::button::handler();
-        service::application::discover::handler();
-        service::application::energy::tick();
-        service::application::role::handler();
-        service::application::reading::handler();
+        //service::application::button::handler();
+        //service::application::discover::handler();
+        //service::application::energy::tick();
+        //service::application::role::handler();
+        //service::application::reading::handler();
         service::ammeter::handler();
+        handle_leader();
+        //if (service::network::has_received_rotate()) {
+        //    service::application::role::on_rotate_received(
+        //        service::network::get_rotate_next_leader());
+        //}
 
-        if (service::network::has_received_rotate()) {
-            service::application::role::on_rotate_received(
-                service::network::get_rotate_next_leader());
-        }
-
-        switch (service::application::role::get_role()) {
-        case service::application::role::Role::LEADER:
-            handle_leader();
-            break;
-        case service::application::role::Role::MEMBER:
-            handle_member();
-            break;
-        default:
-            break;
-        }
+        //switch (service::application::role::get_role()) {
+        //case service::application::role::Role::LEADER:
+        //    handle_leader();
+        //    break;
+        //case service::application::role::Role::MEMBER:
+        //    handle_member();
+        //    break;
+        //default:
+        //    break;
+        //}
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }

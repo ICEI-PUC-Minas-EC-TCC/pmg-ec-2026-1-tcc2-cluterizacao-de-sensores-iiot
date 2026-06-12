@@ -1,4 +1,5 @@
 #include "Network/wifi_driver.hpp"
+#include "LedService/led_controller.hpp"
 #include "MqttService/mqtt_controller.hpp"
 
 #include "esp_log.h"
@@ -51,6 +52,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                  d->reason, d->rssi);
         controller::mqtt::set_wifi_status(false);
         schedule_reconnect();
+        
+        controller::led::set_status(false);
 
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
@@ -63,6 +66,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         }
         backoff_idx = 0;
         controller::mqtt::set_wifi_status(true);
+        controller::led::set_status(true);
     }
 }
 
