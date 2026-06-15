@@ -21,11 +21,11 @@ using driver::network::esp_now::register_rx_callback;
 
 static std::vector<MacAddr> known_peers;
 
-static bool  reading_available    = false;
+static bool reading_available = false;
 static float received_temperature = 0.0f;
 static MacAddr received_sender{};
 
-static bool   rotate_available   = false;
+static bool rotate_available = false;
 static MacAddr rotate_next_leader{};
 
 void ping_received(Packet packet);
@@ -33,9 +33,9 @@ void reading_received(Packet packet);
 void rotate_received(Packet packet);
 
 void init() {
-    register_rx_callback(ping_received,    RxCommand::PING);
+    register_rx_callback(ping_received, RxCommand::PING);
     register_rx_callback(reading_received, RxCommand::READING);
-    register_rx_callback(rotate_received,  RxCommand::ROTATE);
+    register_rx_callback(rotate_received, RxCommand::ROTATE);
 }
 
 void handler() {
@@ -57,6 +57,8 @@ static void register_sender_if_new(const uint8_t *src_mac) {
 void ping_received(Packet packet) {
     register_sender_if_new(packet.src_mac);
 
+    ESP_LOGI(__FUNCTION__, "Package received succesfull");
+
     PingPayload payload{};
     memcpy(&payload, packet.data, sizeof(payload));
 
@@ -67,13 +69,15 @@ void ping_received(Packet packet) {
     memcpy(sender.data(), packet.src_mac, sizeof(sender));
 
     service::application::role::on_leader_announced(announced);
-    service::application::energy::on_peer_energy(sender, payload.residual_energy);
+    service::application::energy::on_peer_energy(sender,
+                                                 payload.residual_energy);
 }
 
 static std::array<uint8_t, sizeof(PingPayload)> build_ping_payload() {
     PingPayload payload{};
     MacAddr announced = service::application::role::get_announced_leader();
-    memcpy(payload.announced_leader, announced.data(), sizeof(payload.announced_leader));
+    memcpy(payload.announced_leader, announced.data(),
+           sizeof(payload.announced_leader));
     payload.residual_energy = service::application::energy::get_residual();
 
     std::array<uint8_t, sizeof(PingPayload)> data{};
@@ -92,18 +96,21 @@ void ping_broadcast() {
 }
 
 esp_err_t add_esp_peer(MacAddr peer_mac, uint8_t peer_channel) {
-    esp_err_t ret = driver::network::esp_now::add_peer(peer_mac.data(), peer_channel);
+    esp_err_t ret =
+        driver::network::esp_now::add_peer(peer_mac.data(), peer_channel);
 
     if (ret == ESP_OK) {
         ESP_LOGI(__FUNCTION__, "New peer: " MACSTR, MAC2STR(peer_mac.data()));
     } else if (ret != ESP_ERR_ESPNOW_EXIST) {
         ESP_LOGE(__FUNCTION__, "Failed to add peer: %u", ret);
+    } else {
+        ESP_LOGE(__FUNCTION__, "Failed: %u", ret);
     }
 
     return ret;
 }
 
-const std::vector<MacAddr>& get_known_peers() {
+const std::vector<MacAddr> &get_known_peers() {
     return known_peers;
 }
 
@@ -149,7 +156,8 @@ void rotate_received(Packet packet) {
     RotatePayload payload{};
     memcpy(&payload, packet.data, sizeof(payload));
 
-    memcpy(rotate_next_leader.data(), payload.next_leader, sizeof(rotate_next_leader));
+    memcpy(rotate_next_leader.data(), payload.next_leader,
+           sizeof(rotate_next_leader));
     rotate_available = true;
 }
 
@@ -167,7 +175,8 @@ MacAddr get_rotate_next_leader() {
 
 void send_rotate(MacAddr next_leader) {
     RotatePayload payload{};
-    memcpy(payload.next_leader, next_leader.data(), sizeof(payload.next_leader));
+    memcpy(payload.next_leader, next_leader.data(),
+           sizeof(payload.next_leader));
 
     std::array<uint8_t, sizeof(RotatePayload)> data{};
     memcpy(data.data(), &payload, sizeof(payload));

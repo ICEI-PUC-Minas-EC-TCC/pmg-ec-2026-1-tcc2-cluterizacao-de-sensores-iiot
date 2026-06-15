@@ -1,5 +1,8 @@
 #include "LedService/led_controller.hpp"
+#include "TaskPriorities.hpp"
+#include "freertos/idf_additions.h"
 #include "sdkconfig.h"
+#include <cstdint>
 
 #ifdef CONFIG_AMMETER_BACKEND_INA219
 
@@ -17,10 +20,10 @@ namespace service::ammeter {
 static const char *TAG = "AMMETER_INA219";
 
 // ---------- INA219 registers ----------
-static constexpr uint8_t REG_CONFIG      = 0x00;
-static constexpr uint8_t REG_SHUNT_V     = 0x01;
-static constexpr uint8_t REG_BUS_V       = 0x02;
-static constexpr uint8_t REG_CURRENT     = 0x04;
+static constexpr uint8_t REG_CONFIG = 0x00;
+static constexpr uint8_t REG_SHUNT_V = 0x01;
+static constexpr uint8_t REG_BUS_V = 0x02;
+static constexpr uint8_t REG_CURRENT = 0x04;
 static constexpr uint8_t REG_CALIBRATION = 0x05;
 
 // Config: 16V BRNG, PGA=÷2 (±80mV), 12-bit/16-samples BADC+SADC, modo contínuo
@@ -29,24 +32,28 @@ static constexpr uint16_t INA219_CONFIG = 0x0E67;
 
 // Bus Voltage register flags
 static constexpr uint16_t BUS_V_CNVR = (1u << 1); // Conversion Ready
-static constexpr uint16_t BUS_V_OVF  = (1u << 0); // Math Overflow
+static constexpr uint16_t BUS_V_OVF = (1u << 0);  // Math Overflow
 
 // ---------- Kconfig ----------
-static constexpr float    SHUNT_OHMS          = CONFIG_AMMETER_INA219_SHUNT_OHMS_X1000 / 1000.0f;
-static constexpr float    MAX_CURRENT_A        = CONFIG_AMMETER_INA219_MAX_CURRENT_MA / 1000.0f;
-static constexpr float    BATTERY_CAPACITY_MAH = CONFIG_AMMETER_BATTERY_CAPACITY_MAH;
-static constexpr uint32_t SAMPLE_INTERVAL_MS   = CONFIG_AMMETER_SAMPLE_INTERVAL_MS;
-static constexpr float    EMA_ALPHA            = 0.2f;
+static constexpr float SHUNT_OHMS =
+    CONFIG_AMMETER_INA219_SHUNT_OHMS_X1000 / 1000.0f;
+static constexpr float MAX_CURRENT_A =
+    CONFIG_AMMETER_INA219_MAX_CURRENT_MA / 1000.0f;
+static constexpr float BATTERY_CAPACITY_MAH =
+    CONFIG_AMMETER_BATTERY_CAPACITY_MAH;
+static constexpr uint32_t SAMPLE_INTERVAL_MS =
+    CONFIG_AMMETER_SAMPLE_INTERVAL_MS;
+static constexpr float EMA_ALPHA = 0.2f;
 
 // ---------- Estado ----------
 static i2c_master_bus_handle_t bus_handle = nullptr;
 static i2c_master_dev_handle_t dev_handle = nullptr;
-static bool initialized                   = false;
-static bool new_measurement_available     = false;
+static bool initialized = false;
+static bool new_measurement_available = false;
 static Measurement last_measurement{};
 static int64_t last_sample_time_us = 0;
-static float current_lsb_ma        = 0.0f;
-static float filtered_ma           = 0.0f;
+static float current_lsb_ma = 0.0f;
+static float filtered_ma = 0.0f;
 
 // ---------- I2C helpers ----------
 
@@ -71,27 +78,28 @@ void init() {
     ESP_LOGW(__FUNCTION__, "Im here");
 
     i2c_master_bus_config_t bus_cfg = {
-        .i2c_port      = I2C_NUM_0,
-        .sda_io_num    = (gpio_num_t)CONFIG_AMMETER_INA219_SDA_GPIO,
-        .scl_io_num    = (gpio_num_t)CONFIG_AMMETER_INA219_SCL_GPIO,
-        .clk_source    = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = (gpio_num_t)CONFIG_AMMETER_INA219_SDA_GPIO,
+        .scl_io_num = (gpio_num_t)CONFIG_AMMETER_INA219_SCL_GPIO,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
-        .flags         = {.enable_internal_pullup = true},
+        .flags = {.enable_internal_pullup = true},
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus_handle));
 
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address  = CONFIG_AMMETER_INA219_ADDR,
-        .scl_speed_hz    = 400000,
+        .device_address = CONFIG_AMMETER_INA219_ADDR,
+        .scl_speed_hz = 400000,
     };
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+    ESP_ERROR_CHECK(
+        i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
     // Calibração: Current_LSB = Max_I / 32768
     // Cal = trunc(0.04096 / (Current_LSB_A * R_shunt))
-    current_lsb_ma      = (MAX_CURRENT_A * 1000.0f) / 32768.0f;
+    current_lsb_ma = (MAX_CURRENT_A * 1000.0f) / 32768.0f;
     float current_lsb_a = current_lsb_ma / 1000.0f;
-    float cal_f         = 0.04096f / (current_lsb_a * SHUNT_OHMS);
+    float cal_f = 0.04096f / (current_lsb_a * SHUNT_OHMS);
 
     if (cal_f > 65535.0f) {
         ESP_LOGE(TAG,
@@ -103,10 +111,9 @@ void init() {
     }
     uint16_t cal = (uint16_t)cal_f;
     if (cal == 0) {
-        ESP_LOGE(TAG,
-                 "Calibracao INA219 resultou em zero — aumente "
-                 "AMMETER_INA219_MAX_CURRENT_MA ou reduza "
-                 "AMMETER_INA219_SHUNT_OHMS_X1000.");
+        ESP_LOGE(TAG, "Calibracao INA219 resultou em zero — aumente "
+                      "AMMETER_INA219_MAX_CURRENT_MA ou reduza "
+                      "AMMETER_INA219_SHUNT_OHMS_X1000.");
         return;
     }
 
@@ -122,30 +129,35 @@ void init() {
 
     err = write_reg(REG_CALIBRATION, cal);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Falha ao escrever calibracao INA219: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Falha ao escrever calibracao INA219: %s",
+                 esp_err_to_name(err));
         return;
     }
 
-    filtered_ma                    = 0.0f;
-    last_measurement               = {};
+    filtered_ma = 0.0f;
+    last_measurement = {};
     last_measurement.remaining_mah = BATTERY_CAPACITY_MAH;
-    last_measurement.battery_pct   = 100.0f;
-    last_sample_time_us            = esp_timer_get_time();
-    initialized                    = true;
+    last_measurement.battery_pct = 100.0f;
+    last_sample_time_us = esp_timer_get_time();
+    initialized = true;
 
     ESP_LOGI(TAG,
              "INA219 OK (SDA=%d SCL=%d addr=0x%02X shunt=%.3fOhm "
              "max=%.0fmA cal=%u lsb=%.4fmA)",
              CONFIG_AMMETER_INA219_SDA_GPIO, CONFIG_AMMETER_INA219_SCL_GPIO,
-             CONFIG_AMMETER_INA219_ADDR, SHUNT_OHMS,
-             MAX_CURRENT_A * 1000.0f, cal, current_lsb_ma);
+             CONFIG_AMMETER_INA219_ADDR, SHUNT_OHMS, MAX_CURRENT_A * 1000.0f,
+             cal, current_lsb_ma);
 
-    controller::led::set_status(true);
+    xTaskCreate(handler, "Ammeter", 4096, NULL,
+                static_cast<uint8_t>(task_priorities::TaskPrioritie::ammeter),
+                NULL);
+
+    // controller::led::set_status(true);
 }
 
 // ---------- handler ----------
 
-void handler() {
+void handler(void *arg) {
     if (!initialized)
         return;
 
@@ -170,8 +182,10 @@ void handler() {
 
     if (bus_flags & BUS_V_OVF) {
         // Corrente excede MAX_CURRENT_A; registradores Current/Power inválidos.
-        ESP_LOGW(TAG, "INA219 OVF: corrente acima do limite configurado (max=%.0fmA)",
-                 MAX_CURRENT_A * 1000.0f);
+        ESP_LOGW(
+            TAG,
+            "INA219 OVF: corrente acima do limite configurado (max=%.0fmA)",
+            MAX_CURRENT_A * 1000.0f);
         last_sample_time_us = now;
         return;
     }
@@ -197,33 +211,35 @@ void handler() {
     filtered_ma = EMA_ALPHA * current_ma + (1.0f - EMA_ALPHA) * filtered_ma;
 
     // Potência e integração
-    float power_mw  = filtered_ma * vbus_v;
+    float power_mw = filtered_ma * vbus_v;
     float elapsed_h = (now - last_sample_time_us) / 3600000000.0f;
     float delta_mah = filtered_ma * elapsed_h;
     float delta_mwh = power_mw * elapsed_h;
 
-    last_measurement.current_ma   = filtered_ma;
-    last_measurement.power_mw     = power_mw;
+    last_measurement.current_ma = filtered_ma;
+    last_measurement.power_mw = power_mw;
     last_measurement.consumed_mah += delta_mah;
     last_measurement.consumed_mwh += delta_mwh;
 
-    // Clamp em ambos os lados: carregamento não pode elevar acima da capacidade,
-    // descarga não pode cair abaixo de zero.
-    last_measurement.remaining_mah =
-        std::min(std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah, 0.0f),
-                 BATTERY_CAPACITY_MAH);
+    // Clamp em ambos os lados: carregamento não pode elevar acima da
+    // capacidade, descarga não pode cair abaixo de zero.
+    last_measurement.remaining_mah = std::min(
+        std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah, 0.0f),
+        BATTERY_CAPACITY_MAH);
     last_measurement.battery_pct =
         (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
 
     // Reusa campos ADC para debug: raw_current e bus_voltage
     last_measurement.adc_raw = raw_current;
-    last_measurement.adc_mv  = (int)(vbus_v * 1000.0f);
+    last_measurement.adc_mv = (int)(vbus_v * 1000.0f);
 
-    last_sample_time_us       = now;
+    last_sample_time_us = now;
     new_measurement_available = true;
 
-    ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%",
-             filtered_ma, vbus_v, power_mw, last_measurement.battery_pct);
+    ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%", filtered_ma, vbus_v,
+             power_mw, last_measurement.battery_pct);
+
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
 // ---------- getters ----------

@@ -1,19 +1,21 @@
-#include "LedService/led_controller.hpp"
-#include "Network/network_controller.hpp"
-#include "AmmeterService/ammeter_service.hpp"
 #include "Application/application_controller.hpp"
+#include "AmmeterService/ammeter_service.hpp"
 #include "Application/button_service.hpp"
 #include "Application/discover_service.hpp"
 #include "Application/energy_service.hpp"
 #include "Application/reading_service.hpp"
 #include "Application/role_service.hpp"
-#include "Network/network_service.hpp"
+#include "LedService/led_controller.hpp"
 #include "MqttService/mqtt_controller.hpp"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "Network/network_controller.hpp"
+#include "Network/network_service.hpp"
+#include "TaskPriorities.hpp"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
+#include <cstdint>
 #include <cstdio>
 
 static const char *TAG = "APP_CONTROLLER";
@@ -25,7 +27,7 @@ void controller::application::init() {
     controller::led::init();
     controller::network::init();
     controller::mqtt::init();
-    service::ammeter::init();
+    // service::ammeter::init();
 
     service::application::button::init();
     service::application::discover::init();
@@ -33,8 +35,11 @@ void controller::application::init() {
     service::application::role::init();
     service::application::reading::init();
 
-    xTaskCreate(controller::application::handler,
-                "application_controller_handler", 4096, NULL, 5, NULL);
+    xTaskCreate(
+        controller::application::handler, "application_controller_handler",
+        4096, NULL,
+        static_cast<uint8_t>(task_priorities::TaskPrioritie::application),
+        NULL);
 }
 
 void controller::application::handler(void *arg) {
@@ -44,8 +49,6 @@ void controller::application::handler(void *arg) {
         service::application::energy::tick();
         service::application::role::handler();
         service::application::reading::handler();
-        service::ammeter::handler();
-        handle_leader();
         if (service::network::has_received_rotate()) {
             service::application::role::on_rotate_received(
                 service::network::get_rotate_next_leader());
@@ -62,7 +65,7 @@ void controller::application::handler(void *arg) {
             break;
         }
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -74,24 +77,14 @@ static void handle_leader() {
     esp_wifi_get_mac(WIFI_IF_STA, own_mac);
 
     bool has_new_temperature = service::application::reading::has_new_reading();
-    bool has_new_current     = service::ammeter::has_new_measurement();
 
-    if (has_new_temperature || has_new_current) {
+    if (has_new_temperature) {
         float temp = service::application::reading::get_last_reading();
-        auto measurement = service::ammeter::get_last_measurement();
 
-        snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
-                 own_mac[0], own_mac[1], own_mac[2],
-                 own_mac[3], own_mac[4], own_mac[5]);
-        snprintf(payload,
-                 sizeof(payload),
-                 "{\"temperature\": %.1f, \"current_ma\": %.2f, \"power_mw\": %.2f, \"consumed_mah\": %.3f, \"remaining_mah\": %.3f, \"battery_pct\": %.2f}",
-                 temp,
-                 measurement.current_ma,
-                 measurement.power_mw,
-                 measurement.consumed_mah,
-                 measurement.remaining_mah,
-                 measurement.battery_pct);
+        snprintf(topic, sizeof(topic), "/tcc/%02x%02x%02x%02x%02x%02x",
+                 own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4],
+                 own_mac[5]);
+        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
         controller::mqtt::publish(topic, payload);
         service::application::energy::on_mqtt_publish();
@@ -99,12 +92,12 @@ static void handle_leader() {
     }
 
     if (service::network::has_received_reading()) {
-        float temp   = service::network::get_received_temperature();
-        auto  sender = service::network::get_received_sender();
+        float temp = service::network::get_received_temperature();
+        auto sender = service::network::get_received_sender();
 
-        snprintf(topic,   sizeof(topic),   "/tcc/%02x%02x%02x%02x%02x%02x",
-                 sender[0], sender[1], sender[2],
-                 sender[3], sender[4], sender[5]);
+        snprintf(topic, sizeof(topic), "/tcc/%02x%02x%02x%02x%02x%02x",
+                 sender[0], sender[1], sender[2], sender[3], sender[4],
+                 sender[5]);
         snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
 
         controller::mqtt::publish(topic, payload);
@@ -118,8 +111,8 @@ static void handle_member() {
         return;
     }
 
-    float temp   = service::application::reading::get_last_reading();
-    auto  leader = service::application::role::get_leader_mac();
+    float temp = service::application::reading::get_last_reading();
+    auto leader = service::application::role::get_leader_mac();
 
     service::network::send_reading(leader, temp);
     service::application::energy::on_espnow_send();

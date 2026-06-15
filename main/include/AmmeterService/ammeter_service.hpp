@@ -14,7 +14,7 @@ struct Measurement {
 };
 
 void init();
-void handler();
+void handler(void *arg);
 
 Measurement get_last_measurement();
 bool has_new_measurement();
