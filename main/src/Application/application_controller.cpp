@@ -44,6 +44,9 @@ void controller::application::init() {
 
 void controller::application::handler(void *arg) {
     for (;;) {
+        char topic[64];
+        char payload[256];
+
         service::application::button::handler();
         service::application::discover::handler();
         service::application::energy::tick();
@@ -53,6 +56,9 @@ void controller::application::handler(void *arg) {
             service::application::role::on_rotate_received(
                 service::network::get_rotate_next_leader());
         }
+
+        snprintf(topic, sizeof(topic), "/tcc/main/");
+        snprintf(payload, sizeof(payload), "{\"CurrentTime\": }");
 
         switch (service::application::role::get_role()) {
         case service::application::role::Role::LEADER:
@@ -81,7 +87,7 @@ static void handle_leader() {
     if (has_new_temperature) {
         float temp = service::application::reading::get_last_reading();
 
-        snprintf(topic, sizeof(topic), "/tcc/%02x%02x%02x%02x%02x%02x",
+        snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4],
                  own_mac[5]);
         snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
@@ -95,7 +101,7 @@ static void handle_leader() {
         float temp = service::network::get_received_temperature();
         auto sender = service::network::get_received_sender();
 
-        snprintf(topic, sizeof(topic), "/tcc/%02x%02x%02x%02x%02x%02x",
+        snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  sender[0], sender[1], sender[2], sender[3], sender[4],
                  sender[5]);
         snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
