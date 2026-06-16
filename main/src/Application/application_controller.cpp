@@ -9,6 +9,7 @@
 #include "MqttService/mqtt_controller.hpp"
 #include "Network/network_controller.hpp"
 #include "Network/network_service.hpp"
+#include "RtcService/rtc_service.hpp"
 #include "TaskPriorities.hpp"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -26,6 +27,7 @@ static void handle_member();
 void controller::application::init() {
     controller::led::init();
     controller::network::init();
+    service::rtc::init();
     controller::mqtt::init();
     service::ammeter::init();
 
@@ -44,9 +46,6 @@ void controller::application::init() {
 
 void controller::application::handler(void *arg) {
     for (;;) {
-        char topic[64];
-        char payload[256];
-
         service::application::button::handler();
         service::application::discover::handler();
         service::application::energy::tick();
@@ -56,9 +55,6 @@ void controller::application::handler(void *arg) {
             service::application::role::on_rotate_received(
                 service::network::get_rotate_next_leader());
         }
-
-        snprintf(topic, sizeof(topic), "/tcc/main/");
-        snprintf(payload, sizeof(payload), "{\"CurrentTime\": }");
 
         switch (service::application::role::get_role()) {
         case service::application::role::Role::LEADER:
@@ -90,7 +86,9 @@ static void handle_leader() {
         snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4],
                  own_mac[5]);
-        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
+        snprintf(payload, sizeof(payload),
+                 "{\"temperature\": %.1f, \"CurrentTime\": \"%s\"}", temp,
+                 service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
         service::application::energy::on_mqtt_publish();
@@ -104,7 +102,9 @@ static void handle_leader() {
         snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  sender[0], sender[1], sender[2], sender[3], sender[4],
                  sender[5]);
-        snprintf(payload, sizeof(payload), "{\"temperature\": %.1f}", temp);
+        snprintf(payload, sizeof(payload),
+                 "{\"temperature\": %.1f, \"CurrentTime\": \"%s\"}", temp,
+                 service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
         service::application::energy::on_mqtt_publish();
