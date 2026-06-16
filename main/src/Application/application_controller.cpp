@@ -27,7 +27,7 @@ void controller::application::init() {
     controller::led::init();
     controller::network::init();
     controller::mqtt::init();
-    // service::ammeter::init();
+    service::ammeter::init();
 
     service::application::button::init();
     service::application::discover::init();

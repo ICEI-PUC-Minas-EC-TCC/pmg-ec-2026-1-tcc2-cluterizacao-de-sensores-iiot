@@ -101,8 +101,7 @@ esp_err_t add_esp_peer(MacAddr peer_mac, uint8_t peer_channel) {
 
     if (ret == ESP_OK) {
         ESP_LOGI(__FUNCTION__, "New peer: " MACSTR, MAC2STR(peer_mac.data()));
-    } else if (ret != ESP_ERR_ESPNOW_EXIST) {
-        ESP_LOGE(__FUNCTION__, "Failed to add peer: %u", ret);
+    } else if (ret == ESP_ERR_ESPNOW_EXIST) {
     } else {
         ESP_LOGE(__FUNCTION__, "Failed: %u", ret);
     }
