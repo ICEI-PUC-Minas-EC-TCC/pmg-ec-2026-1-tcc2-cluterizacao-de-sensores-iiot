@@ -219,3 +219,19 @@ menu "Ammeter Configuration"
             Verifique a silk do seu modulo.
 
 endmenu
+
+menu "RTC / SNTP Configuration"
+    config RTC_NTP_SERVER
+        string "Servidor NTP"
+        default "pool.ntp.org"
+        help
+            Endereco do servidor NTP usado para sincronizar o relogio.
+            Alternativa no Brasil: pool.ntp.br (NIC.br).
+
+    config RTC_TIMEZONE
+        string "Timezone (POSIX TZ)"
+        default "<-03>3"
+        help
+            String POSIX de fuso horario. Padrao: Brasilia (UTC-3, sem
+            horario de verao). O sinal POSIX e invertido: "<-03>3" = UTC-3.
+endmenu
