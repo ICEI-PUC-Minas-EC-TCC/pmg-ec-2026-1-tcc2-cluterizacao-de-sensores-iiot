@@ -83,3 +83,4 @@ analysis/out/
 
 *.db
 docs/superpowers/*
+analysis/conformance/oracle/build/
