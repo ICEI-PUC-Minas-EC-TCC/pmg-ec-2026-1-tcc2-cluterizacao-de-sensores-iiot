@@ -23,6 +23,8 @@ static std::vector<MacAddr> known_peers;
 
 static bool reading_available = false;
 static float received_temperature = 0.0f;
+static float received_current_ma = 0.0f;
+static float received_battery_pct = 0.0f;
 static MacAddr received_sender{};
 
 static bool rotate_available = false;
@@ -120,6 +122,8 @@ void reading_received(Packet packet) {
     memcpy(&payload, packet.data, sizeof(payload));
 
     received_temperature = payload.temperature;
+    received_current_ma = payload.current_ma;
+    received_battery_pct = payload.battery_pct;
     memcpy(received_sender.data(), packet.src_mac, sizeof(received_sender));
     reading_available = true;
 }
@@ -136,12 +140,23 @@ float get_received_temperature() {
     return received_temperature;
 }
 
+float get_received_current_ma() {
+    return received_current_ma;
+}
+
+float get_received_battery_pct() {
+    return received_battery_pct;
+}
+
 MacAddr get_received_sender() {
     return received_sender;
 }
 
-void send_reading(MacAddr dest_mac, float temperature) {
-    ReadingPayload payload{.temperature = temperature};
+void send_reading(MacAddr dest_mac, float temperature, float current_ma,
+                  float battery_pct) {
+    ReadingPayload payload{.temperature = temperature,
+                           .current_ma = current_ma,
+                           .battery_pct = battery_pct};
 
     std::array<uint8_t, sizeof(ReadingPayload)> data{};
     memcpy(data.data(), &payload, sizeof(payload));

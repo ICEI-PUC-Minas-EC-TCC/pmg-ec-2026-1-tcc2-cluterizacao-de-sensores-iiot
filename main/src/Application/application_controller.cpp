@@ -82,12 +82,15 @@ static void handle_leader() {
 
     if (has_new_temperature) {
         float temp = service::application::reading::get_last_reading();
+        auto m = service::ammeter::get_last_measurement();
 
         snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4],
                  own_mac[5]);
         snprintf(payload, sizeof(payload),
-                 "{\"temperature\": %.1f, \"CurrentTime\": \"%s\"}", temp,
+                 "{\"temperature\": %.1f, \"current_ma\": %.1f, "
+                 "\"battery_pct\": %.1f, \"measured_time\": \"%s\"}",
+                 temp, m.current_ma, m.battery_pct,
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -97,13 +100,17 @@ static void handle_leader() {
 
     if (service::network::has_received_reading()) {
         float temp = service::network::get_received_temperature();
+        float current_ma = service::network::get_received_current_ma();
+        float battery_pct = service::network::get_received_battery_pct();
         auto sender = service::network::get_received_sender();
 
         snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  sender[0], sender[1], sender[2], sender[3], sender[4],
                  sender[5]);
         snprintf(payload, sizeof(payload),
-                 "{\"temperature\": %.1f, \"CurrentTime\": \"%s\"}", temp,
+                 "{\"temperature\": %.1f, \"current_ma\": %.1f, "
+                 "\"battery_pct\": %.1f, \"measured_time\": \"%s\"}",
+                 temp, current_ma, battery_pct,
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -119,8 +126,10 @@ static void handle_member() {
 
     float temp = service::application::reading::get_last_reading();
     auto leader = service::application::role::get_leader_mac();
+    auto m = service::ammeter::get_last_measurement();
 
-    service::network::send_reading(leader, temp);
+    service::network::send_reading(leader, temp, m.current_ma, m.battery_pct);
     service::application::energy::on_espnow_send();
-    ESP_LOGI(TAG, "[MEMBER] Sent reading %.1f C to leader", temp);
+    ESP_LOGI(TAG, "[MEMBER] Sent reading %.1f C, %.1f mA, %.1f%% to leader",
+             temp, m.current_ma, m.battery_pct);
 }
