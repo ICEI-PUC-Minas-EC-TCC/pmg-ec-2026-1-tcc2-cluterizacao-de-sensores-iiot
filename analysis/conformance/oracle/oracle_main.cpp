@@ -46,13 +46,17 @@ int main() {
         std::string tok;
         while (std::getline(ps, tok, ',')) {
             if (tok.empty()) continue;
-            auto a = tok.find(':'), b = tok.rfind(':');
-            MacAddr mac = parse_mac(tok.substr(0, a));
-            uint32_t res = (uint32_t)std::stoul(tok.substr(a + 1, b - a - 1));
-            int cool = std::stoi(tok.substr(b + 1));
+            std::vector<std::string> f;
+            std::stringstream ts(tok);
+            std::string part;
+            while (std::getline(ts, part, ':')) f.push_back(part);
+            MacAddr mac = parse_mac(f[0]);
+            uint32_t res = (uint32_t)std::stoul(f[1]);
+            int cool = std::stoi(f[2]);
+            int valid = std::stoi(f[3]);
             cluster.push_back(mac);
-            oracle_energy::set(mac, res);
-            if (cool) lp::on_became_leader(mac);  // registra liderança recente em t=0
+            if (valid) oracle_energy::set(mac, res);  // peer inválido => get_peer_residual valid=false
+            if (cool) lp::on_became_leader(mac);
         }
         g_oracle_time_us = 1000LL * 1000;  // 1 s: < COOLDOWN_MS -> recentes seguem em cooldown
         std::sort(cluster.begin(), cluster.end(),

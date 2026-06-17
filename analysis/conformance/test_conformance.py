@@ -39,12 +39,25 @@ def _scenarios(rng, n=200):
         macs = [_mac(i) for i in rng.sample(range(1, 9), size)]
         residuals = {m: rng.randint(0, 100000) for m in macs}
         cools = {m: rng.random() < 0.3 for m in macs}
+        valids = {m: rng.random() < 0.8 for m in macs}
         current = rng.choice(macs)
         own = rng.choice(macs)
-        out.append((own, current, macs, residuals, cools))
+        valids[own] = True  # firmware: get_residual() do próprio nó é sempre válido
+        out.append((own, current, macs, residuals, cools, valids))
+    # cenários engendrados: own==current (excluído) + peers inválidos => !found => fallback RR
+    for _ in range(20):
+        size = rng.randint(2, 5)
+        macs = [_mac(i) for i in rng.sample(range(1, 9), size)]
+        residuals = {m: rng.randint(0, 100000) for m in macs}
+        cools = {m: False for m in macs}
+        valids = {m: False for m in macs}
+        current = rng.choice(macs)
+        own = current
+        valids[own] = True
+        out.append((own, current, macs, residuals, cools, valids))
     return out
 
-def _py_pick(pol, own, current, macs, residuals, cools):
+def _py_pick(pol, own, current, macs, residuals, cools, valids):
     cluster = sorted(macs)
     cd = P.CooldownTracker()
     for m in macs:
@@ -52,11 +65,13 @@ def _py_pick(pol, own, current, macs, residuals, cools):
             cd.on_became_leader(m, now_ms=0)
     return P.pick_next_leader(
         pol, cluster, current, own,
-        residual_of=lambda m: (residuals[m], True) if m in residuals else (0, False),
+        residual_of=lambda m: (residuals[m], valids[m]),
         cooldown=cd, now_ms=1000)
 
-def _cpp_pick(exe, own, current, macs, residuals, cools):
-    peers = ",".join(f"{_hex(m)}:{residuals[m]}:{1 if cools[m] else 0}" for m in macs)
+def _cpp_pick(exe, own, current, macs, residuals, cools, valids):
+    peers = ",".join(
+        f"{_hex(m)}:{residuals[m]}:{1 if cools[m] else 0}:{1 if valids[m] else 0}"
+        for m in macs)
     line = f"{_hex(own)};{_hex(current)};{peers}\n"
     res = subprocess.run([exe], input=line, capture_output=True, text=True, check=True)
     return bytes.fromhex(res.stdout.strip())
@@ -64,7 +79,7 @@ def _cpp_pick(exe, own, current, macs, residuals, cools):
 @pytest.mark.parametrize("pol", ["round_robin", "energy", "energy_cooldown"])
 def test_policy_matches_firmware(oracles, pol):
     rng = random.Random(12345)
-    for own, current, macs, residuals, cools in _scenarios(rng):
-        cpp = _cpp_pick(oracles[pol], own, current, macs, residuals, cools)
-        py = _py_pick(pol, own, current, macs, residuals, cools)
+    for own, current, macs, residuals, cools, valids in _scenarios(rng):
+        cpp = _cpp_pick(oracles[pol], own, current, macs, residuals, cools, valids)
+        py = _py_pick(pol, own, current, macs, residuals, cools, valids)
         assert cpp == py, f"divergência {pol}: cpp={cpp.hex()} py={py.hex()}"
