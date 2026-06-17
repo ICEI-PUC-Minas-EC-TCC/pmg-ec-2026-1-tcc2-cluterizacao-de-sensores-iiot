@@ -15,9 +15,16 @@ def init_db():
             temperatura REAL,
             corrente_ma REAL,
             bateria_pct REAL,
+            measured_time TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Migracao: adiciona measured_time em bancos ja existentes (CREATE TABLE
+    # IF NOT EXISTS nao altera tabela ja criada).
+    try:
+        cursor.execute("ALTER TABLE leituras ADD COLUMN measured_time TEXT")
+    except sqlite3.OperationalError:
+        pass  # coluna ja existe
     conn.commit()
     conn.close()
 
@@ -35,17 +42,18 @@ def on_message(client, userdata, msg):
         temp = dados.get("temperature")
         corrente = dados.get("current_ma")
         bateria = dados.get("battery_pct")
-        
+        measured_time = dados.get("measured_time")
+
         if temp is not None or corrente is not None:
             conn = sqlite3.connect(DB_NAME)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO leituras (topico, temperatura, corrente_ma, bateria_pct) 
-                VALUES (?, ?, ?, ?)
-            ''', (msg.topic, temp, corrente, bateria))
+                INSERT INTO leituras (topico, temperatura, corrente_ma, bateria_pct, measured_time)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (msg.topic, temp, corrente, bateria, measured_time))
             conn.commit()
             conn.close()
-            print(f"[{msg.topic}] Salvo: Temp={temp}C | I={corrente}mA | Bat={bateria}%")
+            print(f"[{msg.topic}] Salvo: Temp={temp}C | I={corrente}mA | Bat={bateria}% | t={measured_time}")
             
     except Exception as e:
         print(f"Erro no processamento: {e}")
