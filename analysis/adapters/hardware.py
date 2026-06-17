@@ -11,6 +11,8 @@ def load(db_path: str, policy: str = "unknown") -> pd.DataFrame:
         "SELECT topico, corrente_ma, bateria_pct, timestamp FROM leituras ORDER BY timestamp, id",
         conn)
     conn.close()
+    if raw.empty:
+        return pd.DataFrame(columns=contract.COLUMNS)
     ts = pd.to_datetime(raw["timestamp"])
     t0 = ts.min()
     t_ms = ((ts - t0).dt.total_seconds() * 1000).astype("int64")

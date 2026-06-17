@@ -21,3 +21,17 @@ def test_load_maps_to_contract(tmp_path):
     assert set(df["event"]) == {"sample"}
     assert df["t_ms"].min() == 0
     assert set(df["node_id"]) == {"/tcc/main/aa", "/tcc/main/bb"}
+    assert df["t_ms"].max() == 2000          # 10:00:02 está 2000 ms após 10:00:00
+    assert set(df["policy"]) == {"unknown"}  # política default p/ dados de hardware
+
+def test_load_empty_table(tmp_path):
+    db = str(tmp_path / "empty.db")
+    conn = sqlite3.connect(db); c = conn.cursor()
+    c.execute("""CREATE TABLE leituras (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 topico TEXT, temperatura REAL, corrente_ma REAL, bateria_pct REAL,
+                 measured_time TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    conn.commit(); conn.close()
+    df = hardware.load(db)
+    assert list(df.columns) == contract.COLUMNS
+    assert len(df) == 0
+    contract.validate(df)
