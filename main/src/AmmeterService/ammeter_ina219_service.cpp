@@ -115,6 +115,9 @@ void init() {
         return;
     }
 
+    // Wait hardware stabilize.
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+
     esp_err_t err = write_reg(REG_CONFIG, INA219_CONFIG);
     if (err != ESP_OK) {
         ESP_LOGE(TAG,
@@ -156,88 +159,89 @@ void init() {
 // ---------- handler ----------
 
 void handler(void *arg) {
-    if (!initialized)
-        return;
+    for (;;) {
+        const int64_t now = esp_timer_get_time();
+        if ((now - last_sample_time_us) < (int64_t)SAMPLE_INTERVAL_MS * 1000)
+            continue;
 
-    const int64_t now = esp_timer_get_time();
-    if ((now - last_sample_time_us) < (int64_t)SAMPLE_INTERVAL_MS * 1000)
-        return;
+        // Lê o registrador de tensão de barramento primeiro para verificar os
+        // flags CNVR (bit 1) e OVF (bit 0) antes de usar os dados.
+        int16_t raw_bus = 0;
+        if (read_reg(REG_BUS_V, &raw_bus) != ESP_OK) {
+            ESP_LOGW(TAG, "Falha na leitura I2C (REG_BUS_V)");
+            continue;
+        }
 
-    // Lê o registrador de tensão de barramento primeiro para verificar os flags
-    // CNVR (bit 1) e OVF (bit 0) antes de usar os dados.
-    int16_t raw_bus = 0;
-    if (read_reg(REG_BUS_V, &raw_bus) != ESP_OK) {
-        ESP_LOGW(TAG, "Falha na leitura I2C (REG_BUS_V)");
-        return;
-    }
+        uint16_t bus_flags = (uint16_t)raw_bus;
 
-    uint16_t bus_flags = (uint16_t)raw_bus;
+        if (!(bus_flags & BUS_V_CNVR)) {
+            // Conversão ainda em andamento; dados do ciclo anterior — pula.
+            continue;
+        }
 
-    if (!(bus_flags & BUS_V_CNVR)) {
-        // Conversão ainda em andamento; dados do ciclo anterior — pula.
-        return;
-    }
+        if (bus_flags & BUS_V_OVF) {
+            // Corrente excede MAX_CURRENT_A; registradores Current/Power
+            // inválidos.
+            ESP_LOGW(
+                TAG,
+                "INA219 OVF: corrente acima do limite configurado (max=%.0fmA)",
+                MAX_CURRENT_A * 1000.0f);
+            last_sample_time_us = now;
+            continue;
+        }
 
-    if (bus_flags & BUS_V_OVF) {
-        // Corrente excede MAX_CURRENT_A; registradores Current/Power inválidos.
-        ESP_LOGW(
-            TAG,
-            "INA219 OVF: corrente acima do limite configurado (max=%.0fmA)",
-            MAX_CURRENT_A * 1000.0f);
+        int16_t raw_current = 0;
+        if (read_reg(REG_CURRENT, &raw_current) != ESP_OK) {
+            ESP_LOGW(TAG, "Falha na leitura I2C (REG_CURRENT)");
+            continue;
+        }
+
+        float current_ma = raw_current * current_lsb_ma;
+
+        // Tensão de barramento: bits [15:3], LSB = 4 mV.
+        // Cast para uint16_t antes do shift para evitar extensão de sinal.
+        float vbus_v = ((uint16_t)raw_bus >> 3) * 0.004f;
+
+        // Zona morta
+        constexpr float dead_zone_ma = CONFIG_AMMETER_DEAD_ZONE_UA / 1000.0f;
+        if (dead_zone_ma > 0.0f && std::fabs(current_ma) < dead_zone_ma)
+            current_ma = 0.0f;
+
+        // Filtro EMA
+        filtered_ma = EMA_ALPHA * current_ma + (1.0f - EMA_ALPHA) * filtered_ma;
+
+        // Potência e integração
+        float power_mw = filtered_ma * vbus_v;
+        float elapsed_h = (now - last_sample_time_us) / 3600000000.0f;
+        float delta_mah = filtered_ma * elapsed_h;
+        float delta_mwh = power_mw * elapsed_h;
+
+        last_measurement.current_ma = filtered_ma;
+        last_measurement.power_mw = power_mw;
+        last_measurement.consumed_mah += delta_mah;
+        last_measurement.consumed_mwh += delta_mwh;
+
+        // Clamp em ambos os lados: carregamento não pode elevar acima da
+        // capacidade, descarga não pode cair abaixo de zero.
+        last_measurement.remaining_mah = std::min(
+            std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah,
+                     0.0f),
+            BATTERY_CAPACITY_MAH);
+        last_measurement.battery_pct =
+            (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
+
+        // Reusa campos ADC para debug: raw_current e bus_voltage
+        last_measurement.adc_raw = raw_current;
+        last_measurement.adc_mv = (int)(vbus_v * 1000.0f);
+
         last_sample_time_us = now;
-        return;
+        new_measurement_available = true;
+
+        ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%", filtered_ma,
+                 vbus_v, power_mw, last_measurement.battery_pct);
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-
-    int16_t raw_current = 0;
-    if (read_reg(REG_CURRENT, &raw_current) != ESP_OK) {
-        ESP_LOGW(TAG, "Falha na leitura I2C (REG_CURRENT)");
-        return;
-    }
-
-    float current_ma = raw_current * current_lsb_ma;
-
-    // Tensão de barramento: bits [15:3], LSB = 4 mV.
-    // Cast para uint16_t antes do shift para evitar extensão de sinal.
-    float vbus_v = ((uint16_t)raw_bus >> 3) * 0.004f;
-
-    // Zona morta
-    constexpr float dead_zone_ma = CONFIG_AMMETER_DEAD_ZONE_UA / 1000.0f;
-    if (dead_zone_ma > 0.0f && std::fabs(current_ma) < dead_zone_ma)
-        current_ma = 0.0f;
-
-    // Filtro EMA
-    filtered_ma = EMA_ALPHA * current_ma + (1.0f - EMA_ALPHA) * filtered_ma;
-
-    // Potência e integração
-    float power_mw = filtered_ma * vbus_v;
-    float elapsed_h = (now - last_sample_time_us) / 3600000000.0f;
-    float delta_mah = filtered_ma * elapsed_h;
-    float delta_mwh = power_mw * elapsed_h;
-
-    last_measurement.current_ma = filtered_ma;
-    last_measurement.power_mw = power_mw;
-    last_measurement.consumed_mah += delta_mah;
-    last_measurement.consumed_mwh += delta_mwh;
-
-    // Clamp em ambos os lados: carregamento não pode elevar acima da
-    // capacidade, descarga não pode cair abaixo de zero.
-    last_measurement.remaining_mah = std::min(
-        std::max(BATTERY_CAPACITY_MAH - last_measurement.consumed_mah, 0.0f),
-        BATTERY_CAPACITY_MAH);
-    last_measurement.battery_pct =
-        (last_measurement.remaining_mah / BATTERY_CAPACITY_MAH) * 100.0f;
-
-    // Reusa campos ADC para debug: raw_current e bus_voltage
-    last_measurement.adc_raw = raw_current;
-    last_measurement.adc_mv = (int)(vbus_v * 1000.0f);
-
-    last_sample_time_us = now;
-    new_measurement_available = true;
-
-    ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%", filtered_ma, vbus_v,
-             power_mw, last_measurement.battery_pct);
-
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
 // ---------- getters ----------
