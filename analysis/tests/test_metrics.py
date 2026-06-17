@@ -25,3 +25,16 @@ def test_depletion_curves_have_time_and_pct():
     out = metrics.depletion_curves(df)
     assert {"policy","node_id","t_ms","residual_pct"} <= set(out.columns)
     assert out["residual_pct"].max() <= 100.0
+
+def test_leadership_std_counts_zero_leader_nodes():
+    # n0 lidera 4x, n1 2x, n2 nunca (0). O desvio deve considerar os 3 nós:
+    # std([4,2,0]) = 2.0; se n2 fosse ignorado, std([4,2]) ~ 1.41.
+    def row(node, ev):
+        return dict(run_id="r", source="sim", policy="energy", cluster_size=3,
+                    node_id=node, t_ms=0, event=ev, role="leader",
+                    current_ma=float("nan"), power_mw=float("nan"),
+                    residual=1.0, residual_pct=1.0)
+    rows = [row("n0", "became_leader")] * 4 + [row("n1", "became_leader")] * 2 + [row("n2", "sample")]
+    df = pd.DataFrame(rows)
+    std = metrics.leadership_std(df).set_index("policy")["std"]["energy"]
+    assert abs(std - 2.0) < 1e-9

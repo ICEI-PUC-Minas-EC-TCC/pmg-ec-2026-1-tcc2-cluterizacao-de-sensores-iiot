@@ -23,6 +23,10 @@ def fnd_by_policy(df: pd.DataFrame) -> pd.DataFrame:
 def leadership_balance(df: pd.DataFrame) -> pd.DataFrame:
     bl = df[df["event"] == "became_leader"]
     terms = bl.groupby(["policy", "run_id", "node_id"]).size().reset_index(name="terms")
+    # inclui nós que nunca lideraram (0 mandatos) para o gráfico mostrar todos
+    nodes = df[["policy", "run_id", "node_id"]].drop_duplicates()
+    terms = nodes.merge(terms, on=["policy", "run_id", "node_id"], how="left")
+    terms["terms"] = terms["terms"].fillna(0)
     tot = terms.groupby(["policy", "run_id"])["terms"].transform("sum")
     terms["share"] = terms["terms"] / tot
     return terms.groupby(["policy", "node_id"])[["terms", "share"]].mean().reset_index()
@@ -30,6 +34,10 @@ def leadership_balance(df: pd.DataFrame) -> pd.DataFrame:
 def leadership_std(df: pd.DataFrame) -> pd.DataFrame:
     bl = df[df["event"] == "became_leader"]
     terms = bl.groupby(["policy", "run_id", "node_id"]).size().reset_index(name="terms")
+    # inclui nós com 0 mandatos para não enviesar o desvio-padrão entre nós
+    nodes = df[["policy", "run_id", "node_id"]].drop_duplicates()
+    terms = nodes.merge(terms, on=["policy", "run_id", "node_id"], how="left")
+    terms["terms"] = terms["terms"].fillna(0)
     std = terms.groupby(["policy", "run_id"])["terms"].std().reset_index()
     return std.groupby("policy")["terms"].mean().reset_index().rename(columns={"terms": "std"}).fillna(0.0)
 
@@ -61,7 +69,9 @@ def residual_spread(df: pd.DataFrame) -> pd.DataFrame:
         upto = g[g["t_ms"] <= fnd]
         last = upto.sort_values("t_ms").groupby("node_id").tail(1)
         survivors = last[last["residual"] > 0]["residual"]
-        rows.append(dict(policy=policy, run_id=run_id, spread=survivors.std()))
+        spread = survivors.std()
+        rows.append(dict(policy=policy, run_id=run_id,
+                         spread=0.0 if pd.isna(spread) else spread))
     res = pd.DataFrame(rows)
     return res.groupby("policy")["spread"].mean().reset_index().fillna(0.0)
 
