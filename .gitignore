@@ -77,8 +77,9 @@ logs/
 # Documentos do TCC
 *.pdf
 *.PDF
-# Exceção: figuras vetoriais de publicação versionadas
-!analysis/figures/*.pdf
+
+# Saída gerada da análise (figuras regeneráveis pela CLI)
+analysis/out/
 
 *.db
 docs/superpowers/*
