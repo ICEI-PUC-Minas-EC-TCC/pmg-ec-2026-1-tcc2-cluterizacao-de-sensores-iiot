@@ -116,7 +116,7 @@ void init() {
     }
 
     // Wait hardware stabilize.
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
 
     esp_err_t err = write_reg(REG_CONFIG, INA219_CONFIG);
     if (err != ESP_OK) {

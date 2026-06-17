@@ -9,7 +9,7 @@ enum class TaskPrioritie : uint8_t {
     application = configMAX_PRIORITIES - 2,
     led = 0,
     mqtt = configMAX_PRIORITIES - 3,
-    network = configMAX_PRIORITIES - 3,
+    network = configMAX_PRIORITIES - 1,
     ammeter = configMAX_PRIORITIES - 1,
 };
 

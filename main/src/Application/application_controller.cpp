@@ -25,17 +25,17 @@ static void handle_leader();
 static void handle_member();
 
 void controller::application::init() {
-    controller::led::init();
-    controller::network::init();
-    service::rtc::init();
-    controller::mqtt::init();
     service::ammeter::init();
-
+    service::rtc::init();
     service::application::button::init();
     service::application::discover::init();
     service::application::energy::init();
     service::application::role::init();
     service::application::reading::init();
+
+    controller::led::init();
+    controller::network::init();
+    controller::mqtt::init();
 
     xTaskCreate(
         controller::application::handler, "application_controller_handler",
