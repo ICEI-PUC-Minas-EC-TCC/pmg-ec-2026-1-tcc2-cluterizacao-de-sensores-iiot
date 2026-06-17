@@ -1,4 +1,5 @@
 """Port linha a linha de main/src/Application/leader_policy.cpp."""
+from typing import Callable
 from analysis import params
 
 ZERO_MAC = bytes(6)
@@ -23,8 +24,10 @@ def pick_round_robin(cluster: list[bytes], current_leader: bytes) -> bytes:
         idx = 0
     return cluster[(idx + 1) % len(cluster)]
 
-def pick_energy(cluster, current_leader, own_mac, residual_of,
-                in_cooldown, exclude_in_cooldown) -> bytes:
+def pick_energy(cluster: list[bytes], current_leader: bytes, own_mac: bytes,
+                residual_of: Callable[[bytes], tuple[int, bool]],
+                in_cooldown: Callable[[bytes], bool],
+                exclude_in_cooldown: bool) -> bytes:
     # leader_policy.cpp:84-126.
     best = None
     best_energy = 0
@@ -42,8 +45,10 @@ def pick_energy(cluster, current_leader, own_mac, residual_of,
         return pick_round_robin(cluster, current_leader)
     return best
 
-def pick_next_leader(strategy, cluster, current_leader, own_mac,
-                     residual_of, cooldown, now_ms) -> bytes:
+def pick_next_leader(strategy: str, cluster: list[bytes], current_leader: bytes,
+                     own_mac: bytes,
+                     residual_of: Callable[[bytes], tuple[int, bool]],
+                     cooldown: "CooldownTracker", now_ms: int) -> bytes:
     # leader_policy.cpp:128-142.
     if not cluster:
         return current_leader
