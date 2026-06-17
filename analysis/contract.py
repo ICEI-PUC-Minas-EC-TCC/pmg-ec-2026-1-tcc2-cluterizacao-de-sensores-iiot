@@ -8,7 +8,7 @@ COLUMNS = [
 EVENTS = {"sample", "became_leader", "term_expired", "rotate_sent",
           "rotate_applied", "election", "node_death"}
 ROLES = {"leader", "member", "undecided"}
-POLICIES = {"round_robin", "energy", "energy_cooldown"}
+POLICIES = {"round_robin", "energy", "energy_cooldown", "unknown"}
 
 def empty_records() -> list[dict]:
     return []
