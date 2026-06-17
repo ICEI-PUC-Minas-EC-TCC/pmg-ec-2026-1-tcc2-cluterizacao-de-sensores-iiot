@@ -160,6 +160,8 @@ void init() {
 
 void handler(void *arg) {
     for (;;) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
         const int64_t now = esp_timer_get_time();
         if ((now - last_sample_time_us) < (int64_t)SAMPLE_INTERVAL_MS * 1000)
             continue;
@@ -239,8 +241,6 @@ void handler(void *arg) {
 
         ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%", filtered_ma,
                  vbus_v, power_mw, last_measurement.battery_pct);
-
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
