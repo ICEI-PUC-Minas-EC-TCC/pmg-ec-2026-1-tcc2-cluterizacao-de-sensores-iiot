@@ -39,3 +39,9 @@ def test_leader_energy_drains_faster_than_member():
     run(nodes, steps=80)  # ainda no 1º mandato de A
     a, b = nodes
     assert a.energy.residual < b.energy.residual
+
+def test_rotation_mechanism_emits_rotate_sent_and_transfers_leadership():
+    t, nodes, events = make_pair()
+    run(nodes, steps=200)  # cobre > 1 mandato
+    assert any(ev == "rotate_sent" for _, ev, _ in events)        # lider iniciou rotacao
+    assert any(ev == "became_leader" and mac == B for mac, ev, _ in events)  # lideranca foi p/ B

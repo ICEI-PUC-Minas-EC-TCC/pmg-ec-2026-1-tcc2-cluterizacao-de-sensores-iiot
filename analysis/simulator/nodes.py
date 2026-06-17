@@ -54,17 +54,20 @@ class Node:
         else:
             self.role = "member"
 
-    # ---- recepção (espelha rx_callbacks) ----
-    def _process_inbox(self, now_ms):
-        for msg in self.transport.deliver_inbox(self.mac):
-            self.known_peers.add(msg.src)  # register_sender_if_new
+    # ---- recepção (espelha rx_callbacks; ROTATE é aplicado após o role handler,
+    # como em application_controller.cpp:54-57) ----
+    def _process_pings_readings(self, now_ms, inbox):
+        for msg in inbox:
             if msg.kind == "ping":
                 self._on_leader_announced(msg.announced_leader, now_ms)
                 self.energy.on_peer_energy(msg.src, msg.residual, now_ms)
             elif msg.kind == "reading":
                 if self.role == "leader":
-                    self.energy.on_mqtt_publish()  # handle_leader: publica leitura do membro
-            elif msg.kind == "rotate":
+                    self.energy.on_mqtt_publish()  # handle_leader publica leitura do membro
+
+    def _process_rotates(self, now_ms, inbox):
+        for msg in inbox:
+            if msg.kind == "rotate":
                 self._on_rotate_received(msg.next_leader, now_ms)
 
     def _on_leader_announced(self, announced, now_ms):
@@ -158,13 +161,17 @@ class Node:
             self.alive = False
             self.emit(self, now_ms, "node_death")
 
-    # ---- ciclo de 100 ms ----
+    # ---- ciclo de 100 ms (espelha o loop de application_controller.cpp) ----
     def step(self, now_ms):
         if not self.alive:
             return
-        self._process_inbox(now_ms)
+        inbox = self.transport.deliver_inbox(self.mac)
+        for msg in inbox:
+            self.known_peers.add(msg.src)  # register_sender_if_new (qualquer mensagem)
+        self._process_pings_readings(now_ms, inbox)
         self._maybe_ping(now_ms)
         self.energy.tick(now_ms)
         self._role_handler(now_ms)
+        self._process_rotates(now_ms, inbox)  # ROTATE após o role handler
         self._app_step(now_ms)
         self._check_death(now_ms)
