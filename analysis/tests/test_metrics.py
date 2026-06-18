@@ -1,5 +1,6 @@
 # analysis/tests/test_metrics.py
 import pandas as pd
+import pytest
 from analysis.simulator import sim
 from analysis.simulator.energy import ABSTRACT, calibrated
 from analysis import metrics
@@ -14,8 +15,18 @@ def test_fnd_by_policy_one_row_per_policy():
     assert set(out["policy"]) == {"round_robin", "energy"}
     assert (out["fnd_ms_mean"] > 0).all()
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="Com os tempos reais do firmware (TERM=60s, COOLDOWN=120s) o cluster vive "
+    "~24 mandatos ate o FND (eram ~420 com 10s/20s). No perfil abstract (nos "
+    "homogeneos) o 'energy' puro ja alterna sozinho e o ganho do cooldown no "
+    "desvio-padrao se perde no ruido — chega a inverter conforme as seeds. Tese a "
+    "revisitar num cenario heterogeneo (capacidade/corrente por no); ver follow-up "
+    "no spec 2026-06-18-sincroniza-params-firmware.")
 def test_cooldown_balances_better_than_energy():
     # Efeito que o artigo afirma: cooldown reduz o desvio-padrao da lideranca.
+    # NOTA: nao se sustenta de forma robusta no abstract com os tempos reais — ver
+    # o motivo no decorator xfail acima.
     df = pd.concat([many("energy"), many("energy_cooldown")], ignore_index=True)
     std = metrics.leadership_std(df).set_index("policy")["std"]
     assert std["energy_cooldown"] <= std["energy"]

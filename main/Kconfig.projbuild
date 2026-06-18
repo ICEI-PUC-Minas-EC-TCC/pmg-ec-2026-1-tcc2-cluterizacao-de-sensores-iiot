@@ -58,7 +58,7 @@ menu "Leader Election Policy"
             bool "Maior energia residual + cooldown"
             help
                 Pica o no com maior energia residual entre os que nao
-                foram lider nos ultimos 60s. Evita reentrancia rapida do
+                foram lider nos ultimos 120s. Evita reentrancia rapida do
                 mesmo no.
     endchoice
 endmenu

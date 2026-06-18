@@ -21,6 +21,14 @@ def run(nodes, steps):
         for n in nodes:
             n.step(now_ms=k * params.LOOP_PERIOD_MS)
 
+def _steps_mandato_e_rotacao():
+    """Passos (de LOOP_PERIOD_MS) cobrindo a eleição inicial + 1 mandato
+    completo + a rotação seguinte. Derivado de params para não voltar a quebrar
+    quando os tempos do firmware mudarem (ex.: TERM_DURATION_MS 10s -> 60s)."""
+    discovery = params.DISCOVERY_WINDOW_MS // params.LOOP_PERIOD_MS
+    term = params.TERM_DURATION_MS // params.LOOP_PERIOD_MS
+    return discovery + term + 100  # folga p/ ping inicial e propagação do ROTATE
+
 def test_smallest_mac_becomes_leader():
     t, nodes, events = make_pair()
     run(nodes, steps=40)  # > DISCOVERY_WINDOW + alguns pings
@@ -30,7 +38,7 @@ def test_smallest_mac_becomes_leader():
 
 def test_leader_rotates_after_term():
     t, nodes, events = make_pair()
-    run(nodes, steps=200)  # cobre > 1 mandato (10 s = 100 passos)
+    run(nodes, steps=_steps_mandato_e_rotacao())  # eleição + 1 mandato + rotação
     leaders = [mac for mac, ev, _ in events if ev == "became_leader"]
     assert A in leaders and B in leaders  # liderança rotacionou
 
@@ -42,6 +50,6 @@ def test_leader_energy_drains_faster_than_member():
 
 def test_rotation_mechanism_emits_rotate_sent_and_transfers_leadership():
     t, nodes, events = make_pair()
-    run(nodes, steps=200)  # cobre > 1 mandato
+    run(nodes, steps=_steps_mandato_e_rotacao())  # eleição + 1 mandato + rotação
     assert any(ev == "rotate_sent" for _, ev, _ in events)        # lider iniciou rotacao
     assert any(ev == "became_leader" and mac == B for mac, ev, _ in events)  # lideranca foi p/ B
