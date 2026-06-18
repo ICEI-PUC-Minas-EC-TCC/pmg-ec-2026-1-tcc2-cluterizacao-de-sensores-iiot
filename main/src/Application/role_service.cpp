@@ -2,6 +2,7 @@
 #include "Application/leader_policy.hpp"
 #include "LedService/led_controller.hpp"
 #include "Network/network_service.hpp"
+#include "Network/wifi_driver.hpp"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
@@ -25,7 +26,9 @@ static MacAddr leader_mac{};
 static constexpr uint32_t DISCOVERY_WINDOW_MS = 2000;
 
 // Duration each node holds the leader role before rotating (Round-Robin).
-static constexpr uint32_t TERM_DURATION_MS = 10000;
+// Cada rotacao custa uma reassociacao Wi-Fi do novo lider (lenta e instavel
+// no SuperMini), entao mandatos curtos gerariam muito buraco de uplink.
+static constexpr uint32_t TERM_DURATION_MS = 60000;
 
 // Self-reboot when no peer has been seen this long: recovers from boot-time
 // Wi-Fi scan loops that desync the ESP-NOW channel and leave the node
@@ -56,6 +59,16 @@ static MacAddr get_own_mac() {
 static void set_role(Role new_role) {
     current_role = new_role;
     controller::led::set_status(new_role == Role::LEADER);
+
+    // Gating de Wi-Fi por papel: o LEADER mantem a associacao STA (uplink
+    // MQTT); o MEMBER a derruba para economizar bateria. connect()/disconnect()
+    // sao idempotentes, entao chamadas repetidas (resync, re-eleicao) sao
+    // seguras. O SoftAP/ESP-NOW seguem ativos em ambos os papeis.
+    if (new_role == Role::LEADER) {
+        driver::wifi::connect();
+    } else {
+        driver::wifi::disconnect();
+    }
 }
 
 // Returns all cluster nodes (self + known peers) sorted by MAC ascending.

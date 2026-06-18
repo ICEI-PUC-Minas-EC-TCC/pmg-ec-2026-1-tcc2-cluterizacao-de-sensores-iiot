@@ -11,6 +11,19 @@ menu "Wi-Fi Configuration"
         help
             Senha da rede Wi-Fi.
 
+    config NETWORK_FIXED_CHANNEL
+        int "Canal Wi-Fi fixo (1-13)"
+        range 1 13
+        default 6
+        help
+            Canal de radio compartilhado por todos os nos. O SoftAP
+            placeholder de cada no usa este canal para manter o radio
+            acordado (duty cycle 100%) enquanto a associacao STA do
+            membro esta desligada, garantindo que o ESP-NOW continue
+            recebendo. O roteador/hotspot DEVE estar travado neste mesmo
+            canal, pois em APSTA (radio unico) o STA arrasta o SoftAP
+            para o canal do AP ao associar.
+
 endmenu
 
 menu "MQTT Configuration"
