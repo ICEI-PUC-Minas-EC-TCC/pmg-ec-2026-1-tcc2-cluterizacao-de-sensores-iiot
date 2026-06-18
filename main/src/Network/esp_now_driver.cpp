@@ -48,12 +48,11 @@ void register_rx_callback(void (*func)(Packet), RxCommand cmd) {
     RX_CALLBACK_TABLE[static_cast<uint8_t>(cmd)] = func;
 }
 
-void rx_callback(const esp_now_recv_info_t *info, const uint8_t *data, int size) {
-    ESP_LOGI(__FUNCTION__, "Received from " MACSTR " | size=%d",
-             MAC2STR(info->src_addr), size);
-
+void rx_callback(const esp_now_recv_info_t *info, const uint8_t *data,
+                 int size) {
     if (size != sizeof(Packet)) {
-        ESP_LOGW(__FUNCTION__, "Unexpected size: %d (expected %d)", size, (int)sizeof(Packet));
+        ESP_LOGW(__FUNCTION__, "Unexpected size: %d (expected %d)", size,
+                 (int)sizeof(Packet));
     }
 
     Packet packet;
@@ -70,9 +69,10 @@ void send_callback(const wifi_tx_info_t *info, esp_now_send_status_t status) {
         return;
     }
     if (status == ESP_NOW_SEND_SUCCESS) {
-        ESP_LOGI(__FUNCTION__, "Sent to " MACSTR " OK", MAC2STR(info->des_addr));
+        return;
     } else {
-        ESP_LOGW(__FUNCTION__, "Send failed to " MACSTR, MAC2STR(info->des_addr));
+        ESP_LOGW(__FUNCTION__, "Send failed to " MACSTR,
+                 MAC2STR(info->des_addr));
     }
 }
 
@@ -85,8 +85,9 @@ void init() {
     ESP_ERROR_CHECK(esp_now_register_recv_cb(rx_callback));
     ESP_ERROR_CHECK(esp_now_register_send_cb(send_callback));
 
-    esp_now_arrived_queue   = xQueueCreate(ARRIVED_QUEUE_LENGTH,   sizeof(Packet));
-    esp_now_departure_queue = xQueueCreate(DEPARTURE_QUEUE_LENGTH, sizeof(Packet));
+    esp_now_arrived_queue = xQueueCreate(ARRIVED_QUEUE_LENGTH, sizeof(Packet));
+    esp_now_departure_queue =
+        xQueueCreate(DEPARTURE_QUEUE_LENGTH, sizeof(Packet));
 
     add_peer(ESPNOW_ADDR_BROADCAST, 0);
 
@@ -108,8 +109,8 @@ esp_err_t add_peer(const uint8_t *mac, uint8_t channel) {
 
     esp_now_peer_info_t peer = {};
     peer.channel = channel;
-    peer.ifidx   = WIFI_IF_STA;
-    peer.encrypt  = false;
+    peer.ifidx = WIFI_IF_STA;
+    peer.encrypt = false;
     memcpy(peer.peer_addr, mac, ESP_NOW_ETH_ALEN);
 
     return esp_now_add_peer(&peer);
@@ -120,9 +121,9 @@ Packet packer(RxCommand cmd, MacAddr dest_mac, std::span<const uint8_t> data) {
 
     memset(&packet, 0, sizeof(packet));
     packet.command = static_cast<uint8_t>(cmd);
-    memcpy(packet.src_mac,  MY_MAC.data(),   sizeof(MY_MAC));
-    memcpy(packet.dest_mac, &dest_mac,       sizeof(dest_mac));
-    memcpy(packet.data,     data.data(),     data.size());
+    memcpy(packet.src_mac, MY_MAC.data(), sizeof(MY_MAC));
+    memcpy(packet.dest_mac, &dest_mac, sizeof(dest_mac));
+    memcpy(packet.data, data.data(), data.size());
 
     return packet;
 }
@@ -144,7 +145,7 @@ void send_broadcast(RxCommand cmd, std::span<const uint8_t> data) {
 }
 
 void handler_departure() {
-    static Packet  packet;
+    static Packet packet;
     static uint8_t buffer[sizeof(packet)];
 
     memset(&packet, 0, sizeof(packet));
@@ -155,12 +156,10 @@ void handler_departure() {
 
     memcpy(buffer, &packet, sizeof(buffer));
 
-    ESP_LOGI(__FUNCTION__, "Sending to " MACSTR " | cmd=%u",
-             MAC2STR(packet.dest_mac), packet.command);
-
     esp_err_t ret = esp_now_send(packet.dest_mac, buffer, sizeof(buffer));
     if (ret == ESP_ERR_ESPNOW_NOT_FOUND) {
-        ESP_LOGW(__FUNCTION__, "Peer not found: " MACSTR, MAC2STR(packet.dest_mac));
+        ESP_LOGW(__FUNCTION__, "Peer not found: " MACSTR,
+                 MAC2STR(packet.dest_mac));
     } else if (ret != ESP_OK) {
         ESP_LOGW(__FUNCTION__, "Send error: %s", esp_err_to_name(ret));
     }
@@ -177,14 +176,14 @@ void handler_arrived() {
 
     RxCommand cmd = static_cast<RxCommand>(packet.command);
     if (cmd >= RxCommand::SIZE) {
-        ESP_LOGW(__FUNCTION__, "cmd: %u invalid | src: " MACSTR,
-                 cmd, MAC2STR(packet.src_mac));
+        ESP_LOGW(__FUNCTION__, "cmd: %u invalid | src: " MACSTR, cmd,
+                 MAC2STR(packet.src_mac));
         return;
     }
 
     if (RX_CALLBACK_TABLE[static_cast<uint8_t>(cmd)] == 0) {
-        ESP_LOGW(__FUNCTION__, "cmd: %u not registered | src: " MACSTR,
-                 cmd, MAC2STR(packet.src_mac));
+        ESP_LOGW(__FUNCTION__, "cmd: %u not registered | src: " MACSTR, cmd,
+                 MAC2STR(packet.src_mac));
         return;
     }
 
