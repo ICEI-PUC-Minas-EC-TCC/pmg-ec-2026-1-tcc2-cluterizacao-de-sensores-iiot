@@ -41,8 +41,8 @@ SPECS = [
     ("COST_TICK", CONSTEXPR, "main/src/Application/energy_service.cpp", "COST_TICK"),
     ("ENERGY_TICK_PERIOD_MS", CONSTEXPR, "main/src/Application/energy_service.cpp", "TICK_PERIOD_MS"),
     ("PEER_TTL_MS", CONSTEXPR, "main/src/Application/energy_service.cpp", "PEER_TTL_MS"),
-    # reading_service.cpp
-    ("READING_INTERVAL_MS", CONSTEXPR, "main/src/Application/reading_service.cpp", "READING_INTERVAL_MS"),
+    # sampling_service.cpp
+    ("SAMPLING_INTERVAL_MS", CONSTEXPR, "main/src/Application/sampling_service.cpp", "SAMPLING_INTERVAL_MS"),
     # derivadas (não são constexpr nomeadas)
     ("LOOP_PERIOD_MS", VTASK, "main/src/Application/application_controller.cpp", None),
     ("PING_PERIOD_MS", HASELAPSED, "main/src/Application/discover_service.cpp", None),

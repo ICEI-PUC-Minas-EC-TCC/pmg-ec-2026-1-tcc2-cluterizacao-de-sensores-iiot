@@ -5,12 +5,12 @@ from analysis import contract
 def _make_db(path):
     conn = sqlite3.connect(path); c = conn.cursor()
     c.execute("""CREATE TABLE leituras (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 topico TEXT, temperatura REAL, corrente_ma REAL, bateria_pct REAL,
+                 topico TEXT, corrente_ma REAL, bateria_pct REAL,
                  measured_time TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-    c.executemany("INSERT INTO leituras (topico,temperatura,corrente_ma,bateria_pct,timestamp) VALUES (?,?,?,?,?)",
-                  [("/tcc/main/aa", 25.0, 120.0, 90.0, "2026-06-17 10:00:00"),
-                   ("/tcc/main/aa", 25.0, 118.0, 80.0, "2026-06-17 10:00:02"),
-                   ("/tcc/main/bb", 25.0, 24.0, 95.0, "2026-06-17 10:00:02")])
+    c.executemany("INSERT INTO leituras (topico,corrente_ma,bateria_pct,timestamp) VALUES (?,?,?,?)",
+                  [("/tcc/main/aa", 120.0, 90.0, "2026-06-17 10:00:00"),
+                   ("/tcc/main/aa", 118.0, 80.0, "2026-06-17 10:00:02"),
+                   ("/tcc/main/bb", 24.0, 95.0, "2026-06-17 10:00:02")])
     conn.commit(); conn.close()
 
 def test_load_maps_to_contract(tmp_path):
@@ -28,7 +28,7 @@ def test_load_empty_table(tmp_path):
     db = str(tmp_path / "empty.db")
     conn = sqlite3.connect(db); c = conn.cursor()
     c.execute("""CREATE TABLE leituras (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 topico TEXT, temperatura REAL, corrente_ma REAL, bateria_pct REAL,
+                 topico TEXT, corrente_ma REAL, bateria_pct REAL,
                  measured_time TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
     conn.commit(); conn.close()
     df = hardware.load(db)

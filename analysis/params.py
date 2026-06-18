@@ -18,7 +18,7 @@ COST_ESPNOW_SEND = 5            # [main/src/Application/energy_service.cpp:20]
 COST_TICK = 1                   # [main/src/Application/energy_service.cpp:21]
 
 PING_PERIOD_MS = 1_000          # [main/src/Application/discover_service.cpp:13]
-READING_INTERVAL_MS = 2_000     # [main/src/Application/reading_service.cpp:9]
+SAMPLING_INTERVAL_MS = 2_000    # [main/src/Application/sampling_service.cpp:6]
 
 BATTERY_CAPACITY_MAH = 1_000    # [main/Kconfig.projbuild AMMETER_BATTERY_CAPACITY_MAH]
 BATTERY_VOLTAGE_MV = 3_700      # [main/Kconfig.projbuild AMMETER_BATTERY_VOLTAGE_MV]

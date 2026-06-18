@@ -13,7 +13,6 @@ class Message:
     src: bytes
     residual: float = 0.0
     announced_leader: bytes = ZERO_MAC
-    temperature: float = 0.0
     current_ma: float = 0.0
     battery_pct: float = 0.0
     next_leader: bytes = ZERO_MAC

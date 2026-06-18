@@ -1,7 +1,7 @@
 # analysis/simulator/nodes.py
 """Nó do cluster: espelha role_service.cpp + os hooks de energia do
-application_controller.cpp (handle_leader/handle_member) e a geração de leituras
-do reading_service.cpp."""
+application_controller.cpp (handle_leader/handle_member) e a cadência de amostragem
+do sampling_service.cpp."""
 from analysis import params
 from analysis.simulator import policies
 from analysis.simulator.energy import EnergyService
@@ -130,9 +130,9 @@ class Node:
         self._rotate_retry_last = now_ms
         self._stepping_down = True
 
-    # ---- aplicação (handle_leader/handle_member + reading_service) ----
+    # ---- aplicação (handle_leader/handle_member + sampling_service) ----
     def _app_step(self, now_ms):
-        new_reading = (now_ms - self._reading_last) >= params.READING_INTERVAL_MS
+        new_reading = (now_ms - self._reading_last) >= params.SAMPLING_INTERVAL_MS
         if new_reading:
             self._reading_last = now_ms
         if self.role == "leader":
