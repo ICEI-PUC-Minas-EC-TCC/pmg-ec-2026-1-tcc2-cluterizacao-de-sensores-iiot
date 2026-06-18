@@ -1,10 +1,14 @@
 # analysis/figures/figures.py
 """Figuras de publicação (PNG rascunho + PDF vetorial)."""
 import os
+import math
+import logging
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from analysis import metrics
+
+log = logging.getLogger(__name__)
 
 _POL_ORDER = ["round_robin", "energy", "energy_cooldown"]
 _POL_LABEL = {"round_robin": "Round-Robin", "energy": "Energia",
@@ -18,12 +22,27 @@ def _save(fig, outdir, name) -> str:
     plt.close(fig)
     return png
 
-def fig_energy_by_role(df, outdir) -> str:
-    d = metrics.energy_by_role(df)
-    order = [r for r in ["leader", "member", "undecided"] if r in set(d["role"])]
-    d = d.set_index("role").reindex(order).reset_index()
+_ROLE_LABEL = {"leader": "Líder", "member": "Membro"}
+_ROLE_ORDER = ["leader", "member"]
+
+def _valid_num(x) -> bool:
+    return x is not None and not (isinstance(x, float) and math.isnan(x))
+
+def fig_energy_by_role(df, outdir, idle_ma=None) -> str | None:
+    if not df["current_ma"].notna().any():
+        log.warning("Figura A requer perfil calibrated (correntes reais); pulada.")
+        return None
+    d = metrics.energy_by_role(df).set_index("role")
+    roles = [r for r in _ROLE_ORDER if r in d.index]
+    labels = [_ROLE_LABEL[r] for r in roles]
+    values = [d.loc[r, "current_ma_mean"] for r in roles]
+    colors = ["#3b6ea5"] * len(roles)
+    if _valid_num(idle_ma):
+        labels.append("Idle (baseline)")
+        values.append(idle_ma)
+        colors.append("#a9c2dd")
     fig, ax = plt.subplots(figsize=(5, 3.2))
-    ax.bar(d["role"], d["current_ma_mean"], color="#3b6ea5")
+    ax.bar(labels, values, color=colors)
     ax.set_ylabel("Corrente média (mA)"); ax.set_xlabel("Papel")
     ax.set_title("A — Consumo por papel")
     return _save(fig, outdir, "fig_A_energia_por_papel")
@@ -88,11 +107,12 @@ def fig_depletion_curves(df, outdir) -> str:
     fig.suptitle("E — Curvas de depleção por nó")
     return _save(fig, outdir, "fig_E_curvas_deplecao")
 
-def generate_all(df, outdir) -> list[str]:
-    return [
-        fig_energy_by_role(df, outdir),
+def generate_all(df, outdir, idle_ma=None) -> list[str]:
+    paths = [
+        fig_energy_by_role(df, outdir, idle_ma),
         fig_fnd_by_policy(df, outdir),
         fig_leadership_balance(df, outdir),
         fig_residual_at_fnd(df, outdir),
         fig_depletion_curves(df, outdir),
     ]
+    return [p for p in paths if p is not None]
