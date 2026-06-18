@@ -19,6 +19,9 @@ def oracles():
     cxx = shutil.which("g++") or shutil.which("clang++")
     if cxx is None:
         pytest.skip("compilador C++ (g++/clang++) ausente — conformância pulada")
+    if not os.path.exists(SRC[0]):
+        pytest.skip("firmware de liderança ausente (main/src/Application/leader_policy.cpp) "
+                    "— conformância pulada (depende do firmware estar presente)")
     os.makedirs(BUILD, exist_ok=True)
     found = {}
     for pol, defs in DEFS.items():
