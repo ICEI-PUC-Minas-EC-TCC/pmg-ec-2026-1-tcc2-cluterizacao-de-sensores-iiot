@@ -112,6 +112,29 @@ def fig_depletion_curves(df, outdir) -> str:
     fig.suptitle("E — Curvas de depleção por nó")
     return _save(fig, outdir, "fig_E_curvas_deplecao")
 
+def fig_cooldown_tradeoff(df, outdir) -> str:
+    """F — Trade-off do cooldown sob heterogeneidade: justica (desvio-padrao da
+    lideranca, menor=melhor) vs durabilidade (FND, maior=melhor), energy vs
+    energy_cooldown. Correntes placeholder ate a calibracao real (item 2)."""
+    std = metrics.leadership_std(df).set_index("policy")
+    fnd = metrics.fnd_by_policy(df).set_index("policy")
+    pols = [p for p in ["energy", "energy_cooldown"] if p in std.index]
+    labels = [_POL_LABEL[p] for p in pols]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3.4))
+    ax1.bar(labels, [std.loc[p, "std"] for p in pols], color="#3b6ea5")
+    ax1.set_ylabel("Desvio-padrão da liderança (σ)")
+    ax1.set_title("Justiça (menor = melhor)")
+    ax2.bar(labels, [fnd.loc[p, "fnd_ms_mean"] / 1000.0 for p in pols],
+            yerr=[fnd.loc[p, "fnd_ms_std"] / 1000.0 for p in pols], capsize=4, color="#3b6ea5")
+    ax2.set_ylabel("FND (s)")
+    ax2.set_title("Durabilidade (maior = melhor)")
+    fig.suptitle("F — Trade-off justiça vs durabilidade (cluster heterogêneo)")
+    fig.text(0.5, 0.005,
+             "Correntes placeholder até a calibração (item 2); capacidades na razão 10:7:4.",
+             ha="center", fontsize=7, style="italic")
+    fig.tight_layout(rect=[0, 0.04, 1, 0.92])
+    return _save(fig, outdir, "fig_F_tradeoff_cooldown_heterogeneo")
+
 def generate_all(df, outdir, idle_ma=None) -> list[str]:
     paths = [
         fig_energy_by_role(df, outdir, idle_ma),

@@ -9,11 +9,16 @@ def make_macs(n: int) -> list[bytes]:
     return [bytes([0, 0, 0, 0, 0, i + 1]) for i in range(n)]
 
 def run(cluster_size, strategy, profile, seed, max_ms=5_000_000,
-        sample_period_ms=params.PING_PERIOD_MS, stop_at_fnd=True) -> list[dict]:
+        sample_period_ms=params.PING_PERIOD_MS, stop_at_fnd=True,
+        profiles=None) -> list[dict]:
     # max_ms é só um teto de segurança: com stop_at_fnd=True a execução para no
     # FND real (~3600 s no perfil abstract com N=3), então não roda até max_ms.
     rng = random.Random(seed)
     macs = make_macs(cluster_size)
+    if profiles is None:
+        profiles = [profile] * cluster_size
+    elif len(profiles) != cluster_size:
+        raise ValueError(f"profiles ({len(profiles)}) != cluster_size ({cluster_size})")
     transport = Transport(rng, macs, ping_loss=params.PING_BROADCAST_LOSS,
                           unicast_loss=params.UNICAST_LOSS)
     run_id = f"{strategy}-{profile.name}-N{cluster_size}-s{seed}"
@@ -24,13 +29,13 @@ def run(cluster_size, strategy, profile, seed, max_ms=5_000_000,
         return dict(run_id=run_id, source="sim", policy=strategy,
                     cluster_size=cluster_size, node_id=mac_to_id[node.mac],
                     t_ms=now_ms, event=event, role=node.role,
-                    current_ma=profile.current_for(node.role), power_mw=float("nan"),
-                    residual=node.energy.residual, residual_pct=_pct(node, profile))
+                    current_ma=node.profile.current_for(node.role), power_mw=float("nan"),
+                    residual=node.energy.residual, residual_pct=_pct(node))
 
     def emit(node, now_ms, event):
         rows.append(base_row(node, now_ms, event))
 
-    nodes = [Node(m, profile, strategy, transport, emit) for m in macs]
+    nodes = [Node(m, profiles[i], strategy, transport, emit) for i, m in enumerate(macs)]
 
     t = 0
     last_sample = -sample_period_ms
@@ -47,8 +52,8 @@ def run(cluster_size, strategy, profile, seed, max_ms=5_000_000,
         t += params.LOOP_PERIOD_MS
     return rows
 
-def _pct(node, profile) -> float:
-    return 100.0 * node.energy.residual / profile.initial
+def _pct(node) -> float:
+    return 100.0 * node.energy.residual / node.profile.initial
 
 def run_frame(*args, **kwargs):
     return contract.to_frame(run(*args, **kwargs))

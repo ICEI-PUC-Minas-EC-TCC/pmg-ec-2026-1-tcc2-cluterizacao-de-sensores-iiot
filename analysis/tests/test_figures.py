@@ -40,3 +40,9 @@ def test_generate_all_calibrated_returns_five_with_idle(tmp_path):
     assert len(paths) == 5
     for p in paths:
         assert os.path.exists(p) and os.path.getsize(p) > 0
+
+def test_fig_f_tradeoff_writes_file(tmp_path):
+    from analysis import run
+    df = run.hetero_frames(seeds=(1,))
+    path = figures.fig_cooldown_tradeoff(df, str(tmp_path))
+    assert path is not None and os.path.exists(path) and os.path.getsize(path) > 0
