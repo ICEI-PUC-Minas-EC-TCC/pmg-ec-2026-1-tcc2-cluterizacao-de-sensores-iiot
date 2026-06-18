@@ -46,3 +46,15 @@ def test_fig_f_tradeoff_writes_file(tmp_path):
     df = run.hetero_frames(seeds=(1,))
     path = figures.fig_cooldown_tradeoff(df, str(tmp_path))
     assert path is not None and os.path.exists(path) and os.path.getsize(path) > 0
+
+def test_generate_all_pula_b_e_d_sem_mortes(tmp_path):
+    # Calibrado com capacidade real (1000 mAh) nao alcanca o FND no horizonte
+    # curto -> B (FND) e D (residual no FND) devem PULAR, nao quebrar. A/C/E saem.
+    cal = calibrated(leader_ma=120, member_ma=25, idle_ma=8, capacity_mah=1000)
+    df = sim.run_frame(3, "round_robin", cal, seed=1, max_ms=20_000)
+    assert df[df["event"] == "node_death"].empty  # garante o cenario sem mortes
+    paths = figures.generate_all(df, str(tmp_path), idle_ma=8.0)
+    names = [os.path.basename(p) for p in paths]
+    assert not any(("fnd" in n) or ("residual" in n) for n in names)  # B e D ausentes
+    assert any("energia_por_papel" in n for n in names)  # A presente
+    assert len(paths) == 3  # A, C, E

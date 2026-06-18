@@ -71,3 +71,28 @@ def test_energy_by_role_excludes_undecided():
     assert out["leader"] > out["member"]
     assert abs(out["leader"] - 120.0) < 1e-9
     assert abs(out["member"] - 25.0) < 1e-9
+
+def _df_sem_mortes():
+    """Calibrado: ha samples e lideranca, mas NENHUM node_death (capacidade nao
+    esgota no horizonte). Reproduz o cenario do --profile calibrated real."""
+    rows = [
+        dict(run_id="r", source="sim", policy="energy", cluster_size=3,
+             node_id="n0", t_ms=0, event="became_leader", role="leader",
+             current_ma=120.0, power_mw=float("nan"), residual=900.0, residual_pct=90.0),
+        dict(run_id="r", source="sim", policy="energy", cluster_size=3,
+             node_id="n0", t_ms=1000, event="sample", role="leader",
+             current_ma=120.0, power_mw=float("nan"), residual=899.0, residual_pct=89.9),
+        dict(run_id="r", source="sim", policy="energy", cluster_size=3,
+             node_id="n1", t_ms=1000, event="sample", role="member",
+             current_ma=25.0, power_mw=float("nan"), residual=950.0, residual_pct=95.0),
+    ]
+    return pd.DataFrame(rows)
+
+def test_residual_metrics_sem_mortes_nao_quebram():
+    # Sem node_death (FND inalcancado), as metricas de residual no FND devem
+    # retornar vazio-valido em vez de quebrar (KeyError: 'policy').
+    df = _df_sem_mortes()
+    rf = metrics.residual_at_fnd(df)
+    assert rf.empty and {"policy", "node_id", "residual"} <= set(rf.columns)
+    rs = metrics.residual_spread(df)
+    assert rs.empty and {"policy", "spread"} <= set(rs.columns)

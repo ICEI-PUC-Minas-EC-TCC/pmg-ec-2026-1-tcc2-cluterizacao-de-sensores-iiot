@@ -14,9 +14,12 @@ python -m analysis.run --out analysis/out
 ```
 
 ## Perfil calibrado (energia absoluta a partir das medições do ammeter)
+As correntes por papel vivem em `analysis/calibration.py` (fonte única) e podem
+ser sobrepostas na linha de comando:
 ```
 python -m analysis.run --profile calibrated --leader-ma 120 --member-ma 25 --idle-ma 8 --out analysis/out
 ```
+Para extrair as correntes dos logs do laboratório: `python -m analysis.calibration logs/`.
 
 ## Testes
 ```
