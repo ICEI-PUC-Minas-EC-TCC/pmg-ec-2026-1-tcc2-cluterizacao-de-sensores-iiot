@@ -16,7 +16,7 @@ def generate(outdir, profile_name="abstract", cluster_size=3, seeds=(1,2,3,4,5),
         for s in seeds:
             frames.append(sim.run_frame(cluster_size, pol, profile, s))
     df = pd.concat(frames, ignore_index=True)
-    return figures.generate_all(df, outdir)
+    return figures.generate_all(df, outdir, idle_ma=profile.current_idle_ma)
 
 def main():
     ap = argparse.ArgumentParser(description="Gera as figuras A–E da Seção 5.2")
