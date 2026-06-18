@@ -34,42 +34,62 @@ def _ts(line):
     return int(m.group(1)) if m else None
 
 
-def _iter_calib(lines):
-    """Linhas CALIB: cada uma já traz o papel; nada a inferir."""
+def _settled(ts, transition_ts, settle_ms):
+    if settle_ms <= 0 or ts is None or transition_ts is None:
+        return True
+    return ts - transition_ts >= settle_ms
+
+
+def _iter_calib(lines, settle_ms=0):
+    """Linhas CALIB: cada uma traz o papel. Marca transição quando o papel muda
+    entre amostras consecutivas e descarta o transiente."""
+    role = None
+    transition_ts = None
     for line in lines:
         m = _CALIB_RE.search(line)
-        if m:
-            yield m.group(1).upper(), float(m.group(2))
+        if not m:
+            continue
+        ts = _ts(line)
+        new_role, cur = m.group(1).upper(), float(m.group(2))
+        if new_role != role:
+            role, transition_ts = new_role, ts
+        if _settled(ts, transition_ts, settle_ms):
+            yield role, cur
 
 
-def _iter_fallback(lines):
-    """Sem CALIB: papel inferido das transições ROLE_SERVICE; corrente das
-    linhas AMMETER. Antes da 1a eleição (ou após reboot) o papel é IDLE."""
+def _iter_fallback(lines, settle_ms=0):
+    """Sem CALIB: papel das transições ROLE_SERVICE; corrente das linhas AMMETER.
+    Antes da 1a eleição (ou após reboot) o papel é IDLE."""
     role = "IDLE"
+    transition_ts = None
     last_ts = None
     for line in lines:
         ts = _ts(line)
         if ts is not None and last_ts is not None and ts < last_ts:
-            role = "IDLE"  # reboot: timestamp volta a subir do zero
+            role, transition_ts = "IDLE", ts  # reboot
         if ts is not None:
             last_ts = ts
         mr = _ROLE_RE.search(line)
         if mr:
-            role = mr.group(1).upper()
+            new_role = mr.group(1).upper()
+            if new_role != role:
+                role, transition_ts = new_role, ts
             continue
         ma = _AMMETER_RE.search(line)
-        if ma:
+        if ma and _settled(ts, transition_ts, settle_ms):
             yield role, float(ma.group(1))
 
 
-def parse_logs(paths):
-    """Lê os logs e agrega a corrente por papel. Prefere as linhas CALIB; cai
-    para ROLE_SERVICE+AMMETER quando o arquivo não tem CALIB."""
+def parse_logs(paths, settle_ms=0):
+    """Lê os logs e agrega a corrente por papel. Prefere CALIB; cai para
+    ROLE_SERVICE+AMMETER sem CALIB. `settle_ms` descarta o transiente logo após
+    cada troca de papel."""
     buckets = {}
     for p in paths:
         lines = Path(p).read_text(errors="replace").splitlines()
         has_calib = any(_CALIB_RE.search(l) for l in lines)
-        it = _iter_calib(lines) if has_calib else _iter_fallback(lines)
+        it = (_iter_calib(lines, settle_ms) if has_calib
+              else _iter_fallback(lines, settle_ms))
         for role, cur in it:
             buckets.setdefault(role, []).append(cur)
     return {

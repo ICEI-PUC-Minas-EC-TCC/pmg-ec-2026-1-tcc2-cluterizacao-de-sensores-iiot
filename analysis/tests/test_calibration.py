@@ -57,3 +57,24 @@ def test_parse_logs_prefere_calib_sem_duplicar(tmp_path):
     stats = parse_logs([log])
     assert stats["LEADER"].count == 1
     assert "IDLE" not in stats
+
+
+def test_settle_descarta_transiente_pos_troca(tmp_path):
+    log = tmp_path / "ttyUSB0.log"
+    log.write_text(
+        "I (5000) CALIB: role=LEADER I=200.0mA bat=99.9%\n"  # pico no instante da troca
+        "I (9000) CALIB: role=LEADER I=120.0mA bat=99.8%\n"  # já acomodado (>=4000ms)
+    )
+    stats = parse_logs([log], settle_ms=4000)
+    assert stats["LEADER"].count == 1
+    assert stats["LEADER"].mean_ma == 120.0
+
+
+def test_settle_zero_mantem_tudo(tmp_path):
+    log = tmp_path / "ttyUSB0.log"
+    log.write_text(
+        "I (5000) CALIB: role=LEADER I=200.0mA bat=99.9%\n"
+        "I (9000) CALIB: role=LEADER I=120.0mA bat=99.8%\n"
+    )
+    stats = parse_logs([log], settle_ms=0)
+    assert stats["LEADER"].count == 2
