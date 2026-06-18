@@ -24,6 +24,18 @@ static const char *TAG = "APP_CONTROLLER";
 static void handle_leader();
 static void handle_member();
 
+static const char *role_label(service::application::role::Role r) {
+    using service::application::role::Role;
+    switch (r) {
+    case Role::LEADER:
+        return "LEADER";
+    case Role::MEMBER:
+        return "MEMBER";
+    default:
+        return "IDLE";
+    }
+}
+
 void controller::application::init() {
     service::ammeter::init();
     service::rtc::init();
@@ -45,6 +57,7 @@ void controller::application::init() {
 }
 
 void controller::application::handler(void *arg) {
+    uint32_t calib_ticks = 0;
     for (;;) {
         service::application::button::handler();
         service::application::discover::handler();
@@ -65,6 +78,18 @@ void controller::application::handler(void *arg) {
             break;
         default:
             break;
+        }
+
+        // Linha unica de calibracao (~1s): casa a corrente do INA219 com o papel
+        // atual, inclusive no ocioso (UNDECIDED->IDLE), que as linhas
+        // [LEADER]/[MEMBER] nao cobrem. Fonte preferida do parser
+        // analysis/calibration.py.
+        if (++calib_ticks >= 10) {
+            calib_ticks = 0;
+            auto m = service::ammeter::get_last_measurement();
+            ESP_LOGI("CALIB", "role=%s I=%.2fmA bat=%.1f%%",
+                     role_label(service::application::role::get_role()),
+                     m.current_ma, m.battery_pct);
         }
 
         vTaskDelay(100 / portTICK_PERIOD_MS);
