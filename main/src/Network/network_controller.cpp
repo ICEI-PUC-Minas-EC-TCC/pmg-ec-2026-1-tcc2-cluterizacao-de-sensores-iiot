@@ -4,6 +4,7 @@
 #include "Network/network_service.hpp"
 #include "Network/wifi_driver.hpp"
 
+#include "TaskPriorities.hpp"
 #include "dhcpserver/dhcpserver_options.h"
 #include "freertos/idf_additions.h"
 
@@ -49,7 +50,9 @@ void init() {
 
     network_queue = xQueueCreate(10, sizeof(network_cmd_t));
 
-    xTaskCreate(handler, "network_controller", 4096, NULL, 5, NULL);
+    xTaskCreate(handler, "network_controller", 4096, NULL,
+                static_cast<uint8_t>(task_priorities::TaskPrioritie::network),
+                NULL);
 }
 
 void handler(void *arg) {
