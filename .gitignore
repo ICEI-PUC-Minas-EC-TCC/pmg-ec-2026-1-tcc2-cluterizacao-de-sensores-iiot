@@ -79,5 +79,9 @@ logs/
 *.pdf
 *.PDF
 
+# Saída gerada da análise (figuras regeneráveis pela CLI)
+analysis/out/
 
 *.db
+docs/superpowers/*
+analysis/conformance/oracle/build/
