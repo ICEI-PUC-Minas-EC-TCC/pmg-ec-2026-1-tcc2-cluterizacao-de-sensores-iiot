@@ -11,7 +11,6 @@ void handler() {
     static utils::Timer discover_timer;
 
     if (discover_timer.hasElapsed(1000)) {
-        ESP_LOGI(__FUNCTION__, "Broadcasting presence...");
         service::network::ping_broadcast();
         discover_timer.reset();
     }

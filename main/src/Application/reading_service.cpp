@@ -6,16 +6,16 @@ static const char *TAG = "READING_SERVICE";
 
 namespace service::application::reading {
 
-static constexpr uint32_t READING_INTERVAL_MS = 5000;
-static constexpr float    TEMP_MIN  = 20.0f;
-static constexpr float    TEMP_MAX  = 29.0f;
-static constexpr float    TEMP_STEP =  1.0f;
+static constexpr uint32_t READING_INTERVAL_MS = 2000;
+static constexpr float TEMP_MIN = 20.0f;
+static constexpr float TEMP_MAX = 29.0f;
+static constexpr float TEMP_STEP = 1.0f;
 
-static float last_reading          = TEMP_MIN;
-static bool  new_reading_available = false;
+static float last_reading = TEMP_MIN;
+static bool new_reading_available = false;
 
 void init() {
-    last_reading          = TEMP_MIN;
+    last_reading = TEMP_MIN;
     new_reading_available = false;
 }
 
@@ -32,7 +32,7 @@ void handler() {
     }
 
     new_reading_available = true;
-    ESP_LOGI(TAG, "New reading: %.1f C", last_reading);
+    // ESP_LOGI(TAG, "New reading: %.1f C", last_reading);
     reading_timer.reset();
 }
 
