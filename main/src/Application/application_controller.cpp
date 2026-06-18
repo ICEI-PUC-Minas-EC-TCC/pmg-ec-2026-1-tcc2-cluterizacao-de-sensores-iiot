@@ -114,7 +114,8 @@ static void handle_leader() {
                  own_mac[5]);
         snprintf(payload, sizeof(payload),
                  "{\"temperature\": %.1f, \"current_ma\": %.1f, "
-                 "\"battery_pct\": %.1f, \"measured_time\": \"%s\"}",
+                 "\"battery_pct\": %.1f, \"role\": \"LEADER\", "
+                 "\"measured_time\": \"%s\"}",
                  temp, m.current_ma, m.battery_pct,
                  service::rtc::get_current_time().c_str());
 
@@ -134,7 +135,8 @@ static void handle_leader() {
                  sender[5]);
         snprintf(payload, sizeof(payload),
                  "{\"temperature\": %.1f, \"current_ma\": %.1f, "
-                 "\"battery_pct\": %.1f, \"measured_time\": \"%s\"}",
+                 "\"battery_pct\": %.1f, \"role\": \"MEMBER\", "
+                 "\"measured_time\": \"%s\"}",
                  temp, current_ma, battery_pct,
                  service::rtc::get_current_time().c_str());
 

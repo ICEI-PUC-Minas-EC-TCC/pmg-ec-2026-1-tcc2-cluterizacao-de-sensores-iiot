@@ -7,6 +7,7 @@ valores abaixo, registrando a data e os arquivos de origem.
 
 import argparse
 import re
+import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,6 +101,38 @@ def parse_logs(paths, settle_ms=0):
     }
 
 
+def parse_db(db_path, settle_samples=5, min_ma=0.5):
+    """Le as leituras gravadas pelo server_mqtt.py (SQLite) e agrega a corrente
+    por papel. Cada no publica seu papel (LEADER/MEMBER) no payload MQTT; o
+    IDLE nao chega por MQTT (Wi-Fi desligado quando isolado). Por no, descarta
+    as primeiras `settle_samples` amostras apos cada troca de papel (transiente
+    de Wi-Fi) e ignora leituras <= `min_ma` (INA219 falho publica 0.0)."""
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute(
+            "SELECT topico, papel, corrente_ma FROM leituras "
+            "WHERE papel IS NOT NULL AND corrente_ma IS NOT NULL ORDER BY id"
+        ).fetchall()
+    finally:
+        con.close()
+    buckets = {}
+    state = {}  # topico -> (papel_atual, n_amostras_no_papel)
+    for topico, papel, cur in rows:
+        papel = papel.upper()
+        role, since = state.get(topico, (None, 0))
+        since = 0 if papel != role else since + 1
+        state[topico] = (papel, since)
+        if cur <= min_ma:  # INA219 falho / sem medicao
+            continue
+        if since < settle_samples:  # transiente apos troca de papel
+            continue
+        buckets.setdefault(papel, []).append(cur)
+    return {
+        r: RoleStats(r, mean(v), pstdev(v) if len(v) > 1 else 0.0, len(v))
+        for r, v in sorted(buckets.items())
+    }
+
+
 _ROLES = ("LEADER", "MEMBER", "IDLE")
 
 
@@ -126,18 +159,33 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="python -m analysis.calibration",
         description="Extrai as correntes por papel dos logs seriais.")
-    ap.add_argument("paths", nargs="+", help="diretorio de logs ou arquivos .log")
+    ap.add_argument("paths", nargs="+",
+                    help="diretorio/arquivos .log, ou o .db do server_mqtt.py")
     ap.add_argument("--settle-ms", type=int, default=5000,
-                    help="descarta amostras nos primeiros ms apos troca de papel")
+                    help="logs: descarta amostras nos primeiros ms apos troca de papel")
+    ap.add_argument("--settle-samples", type=int, default=5,
+                    help="db: descarta as N primeiras amostras por no apos troca de papel")
     a = ap.parse_args(argv)
+
+    # Fonte SQLite (server_mqtt.py): traz LEADER e MEMBER; IDLE nao chega por MQTT.
+    db_paths = [p for p in a.paths if str(p).endswith(".db")]
+    if db_paths:
+        if len(a.paths) > 1:
+            print("Passe um unico .db (ou apenas arquivos de log, nao misture).")
+            return 1
+        db = db_paths[0]
+        stats = parse_db(db, settle_samples=a.settle_samples)
+        print(f"# Fonte: {db}  (DB MQTT, settle={a.settle_samples} amostras/no)")
+        print(_format_report(stats))
+        return 0
 
     files = []
     for p in a.paths:
         pp = Path(p)
         files.extend(sorted(pp.glob("*.log")) if pp.is_dir() else [pp])
     if not files:
-        print("Nenhum log encontrado. "
-              "Uso: python -m analysis.calibration <dir|arquivos> [--settle-ms N]")
+        print("Nenhum log encontrado. Uso: python -m analysis.calibration "
+              "<dir|arquivos.log|arquivo.db> [--settle-ms N | --settle-samples N]")
         return 1
 
     stats = parse_logs(files, settle_ms=a.settle_ms)
