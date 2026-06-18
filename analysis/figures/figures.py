@@ -52,8 +52,11 @@ def fig_energy_by_role(df, outdir, idle_ma=None) -> str | None:
     ax.set_title("A — Consumo por papel")
     return _save(fig, outdir, "fig_A_energia_por_papel")
 
-def fig_fnd_by_policy(df, outdir) -> str:
+def fig_fnd_by_policy(df, outdir) -> str | None:
     d = metrics.fnd_by_policy(df).set_index("policy").reindex(_POL_ORDER).dropna().reset_index()
+    if d.empty:
+        log.warning("Figura B requer FND (nenhum no morreu no horizonte); pulada.")
+        return None
     fig, ax = plt.subplots(figsize=(5, 3.2))
     ax.bar([_POL_LABEL[p] for p in d["policy"]], d["fnd_ms_mean"] / 1000.0,
            yerr=d["fnd_ms_std"] / 1000.0, capsize=4, color="#3b6ea5")
@@ -77,8 +80,11 @@ def fig_leadership_balance(df, outdir) -> str:
     ax.legend(title="Nó", fontsize=8)
     return _save(fig, outdir, "fig_C_balanceamento_lideranca")
 
-def fig_residual_at_fnd(df, outdir) -> str:
+def fig_residual_at_fnd(df, outdir) -> str | None:
     d = metrics.residual_at_fnd(df)
+    if d.empty:
+        log.warning("Figura D requer FND (nenhum no morreu no horizonte); pulada.")
+        return None
     spread = metrics.residual_spread(df).set_index("policy")
     fig, ax = plt.subplots(figsize=(6, 3.2))
     pols = [p for p in _POL_ORDER if p in set(d["policy"])]

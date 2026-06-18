@@ -58,6 +58,8 @@ def residual_at_fnd(df: pd.DataFrame) -> pd.DataFrame:
         for _, r in last.iterrows():
             out.append(dict(policy=policy, run_id=run_id,
                             node_id=r["node_id"], residual=r["residual"]))
+    if not out:  # nenhum FND alcancado (ex.: calibrado c/ capacidade real) -> vazio-valido
+        return pd.DataFrame(columns=["policy", "node_id", "residual"])
     res = pd.DataFrame(out)
     return res.groupby(["policy", "node_id"])["residual"].mean().reset_index()
 
@@ -75,6 +77,8 @@ def residual_spread(df: pd.DataFrame) -> pd.DataFrame:
         spread = survivors.std()
         rows.append(dict(policy=policy, run_id=run_id,
                          spread=0.0 if pd.isna(spread) else spread))
+    if not rows:  # nenhum FND alcancado -> vazio-valido (nao quebra no groupby)
+        return pd.DataFrame(columns=["policy", "spread"])
     res = pd.DataFrame(rows)
     return res.groupby("policy")["spread"].mean().reset_index().fillna(0.0)
 
