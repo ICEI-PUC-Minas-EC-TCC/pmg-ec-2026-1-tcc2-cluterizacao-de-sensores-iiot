@@ -26,7 +26,12 @@ _ROLE_LABEL = {"leader": "Líder", "member": "Membro"}
 _ROLE_ORDER = ["leader", "member"]
 
 def _valid_num(x) -> bool:
-    return x is not None and not (isinstance(x, float) and math.isnan(x))
+    if x is None:
+        return False
+    try:
+        return not math.isnan(x)
+    except (TypeError, ValueError):
+        return False
 
 def fig_energy_by_role(df, outdir, idle_ma=None) -> str | None:
     if not df["current_ma"].notna().any():
