@@ -40,9 +40,3 @@ def test_generate_all_calibrated_returns_five_with_idle(tmp_path):
     assert len(paths) == 5
     for p in paths:
         assert os.path.exists(p) and os.path.getsize(p) > 0
-
-def test_generate_all_writes_five_pngs(tmp_path):
-    paths = figures.generate_all(_df(), str(tmp_path), idle_ma=8.0)
-    assert len(paths) == 5
-    for p in paths:
-        assert os.path.exists(p) and os.path.getsize(p) > 0

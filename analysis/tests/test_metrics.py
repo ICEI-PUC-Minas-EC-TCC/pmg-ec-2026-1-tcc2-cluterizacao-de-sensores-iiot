@@ -1,7 +1,7 @@
 # analysis/tests/test_metrics.py
 import pandas as pd
 from analysis.simulator import sim
-from analysis.simulator.energy import ABSTRACT
+from analysis.simulator.energy import ABSTRACT, calibrated
 from analysis import metrics
 
 def many(strategy, seeds=(1,2,3)):
@@ -42,7 +42,6 @@ def test_leadership_std_counts_zero_leader_nodes():
 def test_energy_by_role_excludes_undecided():
     # No calibrado, lider e membro tem corrente constante por papel; undecided
     # (boot) usa idle_ma e NAO deve aparecer na metrica de consumo operacional.
-    from analysis.simulator.energy import calibrated
     cal = calibrated(leader_ma=120, member_ma=25, idle_ma=8, capacity_mah=0.5)
     df = sim.run_frame(3, "round_robin", cal, seed=1, max_ms=120_000)
     out = metrics.energy_by_role(df).set_index("role")["current_ma_mean"]
