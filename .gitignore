@@ -82,6 +82,9 @@ logs/
 # Saída gerada da análise (figuras regeneráveis pela CLI)
 analysis/out/
 
+# Figuras geradas localmente em lote (regeneráveis; não versionar)
+resultados/
+
 *.db
 docs/superpowers/*
 analysis/conformance/oracle/build/
