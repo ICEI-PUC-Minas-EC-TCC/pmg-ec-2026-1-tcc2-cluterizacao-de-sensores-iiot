@@ -78,3 +78,26 @@ def test_settle_zero_mantem_tudo(tmp_path):
     )
     stats = parse_logs([log], settle_ms=0)
     assert stats["LEADER"].count == 2
+
+
+def test_cli_imprime_pronto_para_colar(tmp_path, capsys):
+    (tmp_path / "ttyUSB0.log").write_text(
+        "I (4050) CALIB: role=LEADER I=120.0mA bat=99.9%\n"
+        "I (5050) CALIB: role=LEADER I=120.0mA bat=99.9%\n"
+        "I (6050) CALIB: role=MEMBER I=24.0mA bat=99.7%\n"
+        "I (7050) CALIB: role=IDLE I=8.0mA bat=100.0%\n"
+    )
+    from analysis.calibration import main
+    rc = main([str(tmp_path), "--settle-ms", "0"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "LEADER_MA = 120.0" in out
+    assert "MEMBER_MA = 24.0" in out
+    assert "IDLE_MA = 8.0" in out
+
+
+def test_cli_sem_logs_retorna_erro(tmp_path, capsys):
+    from analysis.calibration import main
+    rc = main([str(tmp_path)])
+    assert rc == 1
+    assert "Nenhum log" in capsys.readouterr().out

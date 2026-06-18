@@ -5,7 +5,9 @@ atualizar, rode `python -m analysis.calibration <dir_de_logs>` e cole os três
 valores abaixo, registrando a data e os arquivos de origem.
 """
 
+import argparse
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, pstdev
@@ -96,3 +98,53 @@ def parse_logs(paths, settle_ms=0):
         r: RoleStats(r, mean(v), pstdev(v) if len(v) > 1 else 0.0, len(v))
         for r, v in sorted(buckets.items())
     }
+
+
+_ROLES = ("LEADER", "MEMBER", "IDLE")
+
+
+def _format_report(stats):
+    out = []
+    for role in _ROLES:
+        s = stats.get(role)
+        if s:
+            out.append(f"# {role:<6} n={s.count:<4} "
+                       f"media={s.mean_ma:.2f}mA  sigma={s.std_ma:.2f}mA")
+        else:
+            out.append(f"# {role:<6} (sem amostras - faltou medir este papel)")
+    out.append("")
+    out.append("# Cole em analysis/calibration.py:")
+    for role, const in (("LEADER", "LEADER_MA"), ("MEMBER", "MEMBER_MA"),
+                        ("IDLE", "IDLE_MA")):
+        s = stats.get(role)
+        val = f"{s.mean_ma:.1f}" if s else "None  # FALTOU medir"
+        out.append(f"{const} = {val}")
+    return "\n".join(out)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        prog="python -m analysis.calibration",
+        description="Extrai as correntes por papel dos logs seriais.")
+    ap.add_argument("paths", nargs="+", help="diretorio de logs ou arquivos .log")
+    ap.add_argument("--settle-ms", type=int, default=5000,
+                    help="descarta amostras nos primeiros ms apos troca de papel")
+    a = ap.parse_args(argv)
+
+    files = []
+    for p in a.paths:
+        pp = Path(p)
+        files.extend(sorted(pp.glob("*.log")) if pp.is_dir() else [pp])
+    if not files:
+        print("Nenhum log encontrado. "
+              "Uso: python -m analysis.calibration <dir|arquivos> [--settle-ms N]")
+        return 1
+
+    stats = parse_logs(files, settle_ms=a.settle_ms)
+    print(f"# Fonte: {', '.join(str(f) for f in files)}  (settle={a.settle_ms}ms)")
+    print(_format_report(stats))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
