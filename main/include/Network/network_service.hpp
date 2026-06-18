@@ -27,7 +27,6 @@ enum class TxCommand : uint8_t {
 };
 
 struct __attribute__((packed)) ReadingPayload {
-    float temperature;
     float current_ma;
     float battery_pct;
 };
@@ -57,14 +56,13 @@ void ping_broadcast();
 void ping_peer(controller::network::MacAddr dest_mac);
 esp_err_t add_esp_peer(controller::network::MacAddr peer_mac, uint8_t peer_channel);
 
-void send_reading(controller::network::MacAddr dest_mac, float temperature,
-                  float current_ma, float battery_pct);
+void send_reading(controller::network::MacAddr dest_mac, float current_ma,
+                  float battery_pct);
 void send_rotate(controller::network::MacAddr next_leader);
 
 const std::vector<controller::network::MacAddr>& get_known_peers();
 
 bool has_received_reading();
-float get_received_temperature();
 float get_received_current_ma();
 float get_received_battery_pct();
 controller::network::MacAddr get_received_sender();

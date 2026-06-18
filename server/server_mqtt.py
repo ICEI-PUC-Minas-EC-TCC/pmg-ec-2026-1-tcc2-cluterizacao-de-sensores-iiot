@@ -12,7 +12,6 @@ def init_db():
         CREATE TABLE IF NOT EXISTS leituras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             topico TEXT,
-            temperatura REAL,
             corrente_ma REAL,
             bateria_pct REAL,
             papel TEXT,
@@ -41,22 +40,21 @@ def on_message(client, userdata, msg):
         dados = json.loads(payload)
         
         # Extraindo dados conforme o snprintf do seu firmware
-        temp = dados.get("temperature")
         corrente = dados.get("current_ma")
         bateria = dados.get("battery_pct")
         papel = dados.get("role")
         measured_time = dados.get("measured_time")
 
-        if temp is not None or corrente is not None:
+        if corrente is not None:
             conn = sqlite3.connect(DB_NAME)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO leituras (topico, temperatura, corrente_ma, bateria_pct, papel, measured_time)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (msg.topic, temp, corrente, bateria, papel, measured_time))
+                INSERT INTO leituras (topico, corrente_ma, bateria_pct, papel, measured_time)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (msg.topic, corrente, bateria, papel, measured_time))
             conn.commit()
             conn.close()
-            print(f"[{msg.topic}] Salvo: {papel} | Temp={temp}C | I={corrente}mA | Bat={bateria}% | t={measured_time}")
+            print(f"[{msg.topic}] Salvo: {papel} | I={corrente}mA | Bat={bateria}% | t={measured_time}")
             
     except Exception as e:
         print(f"Erro no processamento: {e}")

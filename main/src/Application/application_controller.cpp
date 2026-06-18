@@ -3,7 +3,7 @@
 #include "Application/button_service.hpp"
 #include "Application/discover_service.hpp"
 #include "Application/energy_service.hpp"
-#include "Application/reading_service.hpp"
+#include "Application/sampling_service.hpp"
 #include "Application/role_service.hpp"
 #include "LedService/led_controller.hpp"
 #include "MqttService/mqtt_controller.hpp"
@@ -43,7 +43,7 @@ void controller::application::init() {
     service::application::discover::init();
     service::application::energy::init();
     service::application::role::init();
-    service::application::reading::init();
+    service::application::sampling::init();
 
     controller::led::init();
     controller::network::init();
@@ -63,7 +63,7 @@ void controller::application::handler(void *arg) {
         service::application::discover::handler();
         service::application::energy::tick();
         service::application::role::handler();
-        service::application::reading::handler();
+        service::application::sampling::handler();
         if (service::network::has_received_rotate()) {
             service::application::role::on_rotate_received(
                 service::network::get_rotate_next_leader());
@@ -103,20 +103,19 @@ static void handle_leader() {
     uint8_t own_mac[6];
     esp_wifi_get_mac(WIFI_IF_STA, own_mac);
 
-    bool has_new_temperature = service::application::reading::has_new_reading();
+    bool has_new_sample = service::application::sampling::has_new_sample();
 
-    if (has_new_temperature) {
-        float temp = service::application::reading::get_last_reading();
+    if (has_new_sample) {
         auto m = service::ammeter::get_last_measurement();
 
         snprintf(topic, sizeof(topic), "/tcc/main/%02x%02x%02x%02x%02x%02x",
                  own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4],
                  own_mac[5]);
         snprintf(payload, sizeof(payload),
-                 "{\"temperature\": %.1f, \"current_ma\": %.1f, "
+                 "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"LEADER\", "
                  "\"measured_time\": \"%s\"}",
-                 temp, m.current_ma, m.battery_pct,
+                 m.current_ma, m.battery_pct,
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -125,7 +124,6 @@ static void handle_leader() {
     }
 
     if (service::network::has_received_reading()) {
-        float temp = service::network::get_received_temperature();
         float current_ma = service::network::get_received_current_ma();
         float battery_pct = service::network::get_received_battery_pct();
         auto sender = service::network::get_received_sender();
@@ -134,10 +132,10 @@ static void handle_leader() {
                  sender[0], sender[1], sender[2], sender[3], sender[4],
                  sender[5]);
         snprintf(payload, sizeof(payload),
-                 "{\"temperature\": %.1f, \"current_ma\": %.1f, "
+                 "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"MEMBER\", "
                  "\"measured_time\": \"%s\"}",
-                 temp, current_ma, battery_pct,
+                 current_ma, battery_pct,
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -147,16 +145,15 @@ static void handle_leader() {
 }
 
 static void handle_member() {
-    if (!service::application::reading::has_new_reading()) {
+    if (!service::application::sampling::has_new_sample()) {
         return;
     }
 
-    float temp = service::application::reading::get_last_reading();
     auto leader = service::application::role::get_leader_mac();
     auto m = service::ammeter::get_last_measurement();
 
-    service::network::send_reading(leader, temp, m.current_ma, m.battery_pct);
+    service::network::send_reading(leader, m.current_ma, m.battery_pct);
     service::application::energy::on_espnow_send();
-    ESP_LOGI(TAG, "[MEMBER] Sent reading %.1f C, %.1f mA, %.1f%% to leader",
-             temp, m.current_ma, m.battery_pct);
+    ESP_LOGI(TAG, "[MEMBER] Sent reading %.1f mA, %.1f%% to leader",
+             m.current_ma, m.battery_pct);
 }
