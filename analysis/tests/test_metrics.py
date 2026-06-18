@@ -20,9 +20,9 @@ def test_fnd_by_policy_one_row_per_policy():
     reason="Com os tempos reais do firmware (TERM=60s, COOLDOWN=120s) o cluster vive "
     "~24 mandatos ate o FND (eram ~420 com 10s/20s). No perfil abstract (nos "
     "homogeneos) o 'energy' puro ja alterna sozinho e o ganho do cooldown no "
-    "desvio-padrao se perde no ruido — chega a inverter conforme as seeds. Tese a "
-    "revisitar num cenario heterogeneo (capacidade/corrente por no); ver follow-up "
-    "no spec 2026-06-18-sincroniza-params-firmware.")
+    "desvio-padrao se perde no ruido — chega a inverter conforme as seeds. O efeito "
+    "SE confirma no cenario heterogeneo: ver test_cooldown_reduz_std_no_heterogeneo "
+    "(capacidades de bateria distintas).")
 def test_cooldown_balances_better_than_energy():
     # Efeito que o artigo afirma: cooldown reduz o desvio-padrao da lideranca.
     # NOTA: nao se sustenta de forma robusta no abstract com os tempos reais — ver
@@ -30,6 +30,17 @@ def test_cooldown_balances_better_than_energy():
     df = pd.concat([many("energy"), many("energy_cooldown")], ignore_index=True)
     std = metrics.leadership_std(df).set_index("policy")["std"]
     assert std["energy_cooldown"] <= std["energy"]
+
+
+def test_cooldown_reduz_std_no_heterogeneo():
+    # Contraponto ao xfail homogeneo acima: com capacidades de bateria distintas
+    # o energy puro favorece o no "rico" (monopoliza a lideranca) e o cooldown
+    # distribui -> desvio-padrao da lideranca menor. Efeito robusto (validado
+    # ~4.9 vs ~1.9). E onde a tese do artigo de fato se sustenta.
+    from analysis import run
+    df = run.hetero_frames(seeds=(1, 2, 3, 4, 5))
+    std = metrics.leadership_std(df).set_index("policy")["std"]
+    assert std["energy_cooldown"] < std["energy"]
 
 def test_depletion_curves_have_time_and_pct():
     df = many("round_robin", seeds=(1,))
