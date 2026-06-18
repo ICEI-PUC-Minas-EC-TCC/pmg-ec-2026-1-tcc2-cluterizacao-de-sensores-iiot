@@ -8,8 +8,11 @@ def _fnd_per_run(df: pd.DataFrame) -> pd.DataFrame:
     return grp.rename(columns={"t_ms": "fnd_ms"})
 
 # A
+_OPERATIONAL_ROLES = ("leader", "member")
+
 def energy_by_role(df: pd.DataFrame) -> pd.DataFrame:
     s = df[df["event"] == "sample"].dropna(subset=["current_ma"])
+    s = s[s["role"].isin(_OPERATIONAL_ROLES)]
     out = s.groupby("role")["current_ma"].mean().reset_index()
     return out.rename(columns={"current_ma": "current_ma_mean"})
 

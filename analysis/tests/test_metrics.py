@@ -38,3 +38,15 @@ def test_leadership_std_counts_zero_leader_nodes():
     df = pd.DataFrame(rows)
     std = metrics.leadership_std(df).set_index("policy")["std"]["energy"]
     assert abs(std - 2.0) < 1e-9
+
+def test_energy_by_role_excludes_undecided():
+    # No calibrado, lider e membro tem corrente constante por papel; undecided
+    # (boot) usa idle_ma e NAO deve aparecer na metrica de consumo operacional.
+    from analysis.simulator.energy import calibrated
+    cal = calibrated(leader_ma=120, member_ma=25, idle_ma=8, capacity_mah=0.5)
+    df = sim.run_frame(3, "round_robin", cal, seed=1, max_ms=120_000)
+    out = metrics.energy_by_role(df).set_index("role")["current_ma_mean"]
+    assert set(out.index) == {"leader", "member"}
+    assert out["leader"] > out["member"]
+    assert abs(out["leader"] - 120.0) < 1e-9
+    assert abs(out["member"] - 25.0) < 1e-9
