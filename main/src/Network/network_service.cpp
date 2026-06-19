@@ -31,6 +31,8 @@ static bool rotate_available = false;
 static MacAddr rotate_next_leader{};
 
 static bool reset_energy_available = false;
+static ResetScenario reset_scenario = ResetScenario::FULL;
+static char reset_run_id[24] = "UNKNOWN";
 
 void ping_received(Packet packet);
 void reading_received(Packet packet);
@@ -202,6 +204,14 @@ void send_rotate(MacAddr next_leader) {
 
 void reset_energy_received(Packet packet) {
     register_sender_if_new(packet.src_mac);
+    ResetEnergyPayload payload{};
+    memcpy(&payload, packet.data, sizeof(payload));
+    reset_scenario = (payload.scenario == (uint8_t)ResetScenario::STAGGERED)
+                         ? ResetScenario::STAGGERED
+                         : ResetScenario::FULL;
+    payload.run_id[sizeof(payload.run_id) - 1] = '\0';
+    strncpy(reset_run_id, payload.run_id, sizeof(reset_run_id) - 1);
+    reset_run_id[sizeof(reset_run_id) - 1] = '\0';
     reset_energy_available = true;
 }
 
@@ -213,11 +223,18 @@ bool has_received_reset_energy() {
     return false;
 }
 
-void send_reset_energy_broadcast() {
-    // Command-only, no payload. Broadcast so every node in range hears it; the
-    // caller repeats it a few times to cover ESP-NOW broadcast loss (no ACK).
-    driver::network::esp_now::send_broadcast(RxCommand::RESET_ENERGY,
-                                             std::span<const uint8_t>{});
+void send_reset_energy_broadcast(ResetScenario scenario, const char *run_id) {
+    ResetEnergyPayload payload{};
+    payload.scenario = (uint8_t)scenario;
+    strncpy(payload.run_id, run_id, sizeof(payload.run_id) - 1);
+    payload.run_id[sizeof(payload.run_id) - 1] = '\0';
+
+    std::array<uint8_t, sizeof(ResetEnergyPayload)> data{};
+    memcpy(data.data(), &payload, sizeof(payload));
+    driver::network::esp_now::send_broadcast(RxCommand::RESET_ENERGY, data);
 }
+
+ResetScenario get_reset_scenario() { return reset_scenario; }
+const char *get_reset_run_id() { return reset_run_id; }
 
 } // namespace service::network

@@ -341,4 +341,13 @@ bool is_dead() {
     return dead;
 }
 
+int own_rank() {
+    auto nodes = sorted_cluster();
+    MacAddr own = get_own_mac();
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (memcmp(nodes[i].data(), own.data(), 6) == 0) return (int)i;
+    }
+    return 0;
+}
+
 } // namespace service::application::role

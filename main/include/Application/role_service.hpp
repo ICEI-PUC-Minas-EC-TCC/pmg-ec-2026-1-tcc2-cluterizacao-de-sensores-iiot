@@ -33,4 +33,8 @@ controller::network::MacAddr get_announced_leader();
 // the announced leader within one PING period.
 void on_leader_announced(controller::network::MacAddr announced_leader);
 
+// Posicao (0-based) do proprio MAC no anel de MACs ordenado do cluster, e o
+// tamanho do cluster. Usado pelo reset escalonado.
+int own_rank();
+
 } // namespace service::application::role

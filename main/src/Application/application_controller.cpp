@@ -5,6 +5,7 @@
 #include "Application/energy_service.hpp"
 #include "Application/leader_policy.hpp"
 #include "Application/nvs_service.hpp"
+#include "Application/reset_service.hpp"
 #include "Application/run_service.hpp"
 #include "Application/sampling_service.hpp"
 #include "Application/role_service.hpp"
@@ -88,13 +89,11 @@ void controller::application::handler(void *arg) {
                 service::network::get_rotate_next_leader());
         }
 
-        // Reset de energia em rede: um nó pediu (BOOT >5s) e propagou via
-        // ESP-NOW. Aqui agimos como no botão local: apaga a energia persistida
-        // e reinicia. Mesmo padrão do ROTATE (rede sinaliza, app age).
         if (service::network::has_received_reset_energy()) {
-            ESP_LOGW(TAG, "RESET_ENERGY recebido — zerando energia e reiniciando");
-            service::application::nvs::erase_energy();
-            esp_restart();
+            ESP_LOGW(TAG, "RESET_ENERGY recebido — aplicando cenario e reiniciando");
+            service::application::reset::apply_and_restart(
+                service::network::get_reset_scenario(),
+                service::network::get_reset_run_id());
         }
 
         if (service::application::role::is_dead()) {
