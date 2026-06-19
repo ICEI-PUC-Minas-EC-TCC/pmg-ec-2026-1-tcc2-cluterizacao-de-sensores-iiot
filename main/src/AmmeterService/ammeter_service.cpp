@@ -2,6 +2,7 @@
 
 #ifndef CONFIG_AMMETER_BACKEND_INA219
 
+#include "AmmeterService/ammeter_persistence.hpp"
 #include "AmmeterService/ammeter_service.hpp"
 
 #include "esp_adc/adc_cali.h"
@@ -135,6 +136,7 @@ void init() {
   last_measurement = {};
   last_measurement.remaining_mah = BATTERY_CAPACITY_MAH;
   last_measurement.battery_pct = 100.0f;
+  persistence::load(last_measurement, BATTERY_CAPACITY_MAH);
 
   last_sample_time_us = esp_timer_get_time();
   initialized = true;
@@ -226,6 +228,8 @@ void handler() {
 
   last_sample_time_us = now;
   new_measurement_available = true;
+
+  persistence::maybe_persist(last_measurement, BATTERY_CAPACITY_MAH);
 
   // adc_mv e offset incluidos no log para facilitar a calibracao:
   // rode o gear com I=0, leia adc_mv e ajuste CONFIG_AMMETER_OFFSET_MV.
