@@ -69,7 +69,13 @@ void controller::application::handler(void *arg) {
     uint32_t calib_ticks = 0;
     for (;;) {
         service::application::button::handler();
-        service::application::discover::handler();
+        // No' morto fica em silencio (nao anuncia presenca): para de mandar
+        // PING para sair da rede e deixar sua amostra de energia expirar nos
+        // peers. Continua RECEBENDO (callback rx e' independente), entao ainda
+        // ouve o broadcast de reset para reiniciar.
+        if (!service::application::role::is_dead()) {
+            service::application::discover::handler();
+        }
         service::application::energy::tick();
         service::application::role::handler();
         service::application::sampling::handler();
