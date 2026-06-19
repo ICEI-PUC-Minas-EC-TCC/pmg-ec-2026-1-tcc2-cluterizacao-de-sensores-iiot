@@ -205,6 +205,19 @@ void on_rotate_received(MacAddr next_leader) {
 
     MacAddr own_mac = get_own_mac();
 
+    // Um no' morto eleito por engano (peer ainda nao expirou nosso MAC):
+    // nao assume; reenvia o rodizio para o proximo da politica.
+    if (dead && memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
+        auto    nodes = sorted_cluster();
+        MacAddr next  = leader_policy::pick_next_leader(nodes, own_mac);
+        if (memcmp(next.data(), own_mac.data(), 6) != 0) {
+            ESP_LOGW(TAG, "DEAD node elected — re-rotating to " MACSTR,
+                     MAC2STR(next.data()));
+            service::network::send_rotate(next);
+        }
+        return;
+    }
+
     leader_mac = next_leader;
     leader_policy::on_became_leader(next_leader);
 
@@ -225,6 +238,24 @@ void handler() {
         isolation_timer.hasElapsed(ISOLATION_TIMEOUT_MS)) {
         ESP_LOGE(TAG, "Isolated for %u ms — restarting", ISOLATION_TIMEOUT_MS);
         esp_restart();
+    }
+
+    // Lider que acabou de morrer: inicia step-down imediato para um peer
+    // (idealmente vivo; peers mortos silenciam e expiram do cluster). Sem
+    // isso o uplink morreria junto com o no'.
+    if (dead && current_role == Role::LEADER && !stepping_down) {
+        auto    nodes = sorted_cluster();
+        MacAddr own   = get_own_mac();
+        MacAddr next  = leader_policy::pick_next_leader(nodes, own);
+        if (memcmp(next.data(), own.data(), 6) != 0) {
+            ESP_LOGW(TAG, "DEAD leader — handing off to " MACSTR, MAC2STR(next.data()));
+            service::network::send_rotate(next);
+            pending_next_leader = next;
+            rotate_retries_left = ROTATE_RETRIES;
+            rotate_retry_timer.reset();
+            stepping_down = true;
+        }
+        // Sem peer distinto (rede acabou): permanece e silencia.
     }
 
     if (current_role == Role::UNDECIDED) {
