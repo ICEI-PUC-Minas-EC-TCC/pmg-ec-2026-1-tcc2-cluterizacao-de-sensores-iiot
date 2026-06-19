@@ -17,4 +17,8 @@ void load(Measurement &m, float capacity_mah);
 // gravação (limita o desgaste do flash). Chamar a cada nova medição.
 void maybe_persist(const Measurement &m, float capacity_mah);
 
+// Reset de bancada: grava consumed_mah correspondente a uma bateria inicial
+// de `pct`% sobre `capacity_mah`. Usado antes do restart.
+void persist_reset_pct(float pct, float capacity_mah);
+
 } // namespace service::ammeter::persistence

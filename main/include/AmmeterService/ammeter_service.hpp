@@ -19,4 +19,6 @@ void handler(void *arg);
 Measurement get_last_measurement();
 bool has_new_measurement();
 
+float get_battery_capacity_mah();
+
 } // namespace service::ammeter
