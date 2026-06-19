@@ -62,12 +62,59 @@ O bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) grava cada leitura em In
 > A tag `policy` só existe em dados gravados pela versão atual do bridge. Garanta que o
 > firmware publica `policy` no JSON e que cada ensaio roda com a sua política.
 
-## Como reproduzir o ensaio
+## Rodando um ensaio
 
-1. Suba o ESP com a política A; rode o bridge; deixe a malha descarregar até o 1º nó morrer.
-2. Repita com a política B (outro horário).
-3. Abra o dashboard. As duas curvas aparecem sobrepostas em tempo decorrido e o painel de
-   FND mostra os minutos de cada uma.
+### Gestos de BOOT e controle de reset
+
+O firmware reconhece três faixas de tempo no botão de BOOT (hold contínuo), cada uma triggerando um modo de reset diferente:
+
+| Faixa     | Comportamento | Cenário |
+|-----------|---------------|---------|
+| 2–5 s    | **Restart suave** — reinicia apenas o ESP, sem resetar dados de energia no NVS. | Recuperação de travamento, testes rápidos. |
+| 5–10 s   | **Reset CHEIO** (Cenário A) — limpa NVS, todos os nós voltam com bateria em **100%**. | Ensaio homogêneo; todos começam com a mesma energia. |
+| >10 s    | **Reset ESCALONADO** (Cenário B) — limpa NVS, cada nó recebe bateria inicial conforme sua posição na lista **ordenada por MAC**: posição 1 → 100%, 2 → 85%, 3 → 70%, 4 → 55%, 5 → 40%. | Ensaio heterogêneo; simula rede já descarregada antes do teste. |
+
+Ao soltar o botão, o reset inicia: o nó publica via broadcast seu novo `run_id` (um UUID único da rodada) e transmite para toda a malha o scenario escolhido (CHEIO ou ESCALONADO).
+
+### Morte simulada e FND
+
+Quando a bateria medida de um nó atinge **~1%** (limiar `DEATH_THRESHOLD_PCT`), o nó:
+- **Para de publicar** MQTT (não envia mais leituras de corrente/bateria).
+- **Recusa participar** da liderança de roteamento (não se oferece como roteador).
+- **Step-down** automático até ficar com apenas link direto ao concentrador (se houver).
+
+Isso é **comportamento esperado e proposital** — não é um bug, mas a simulação de uma morte real por bateria. O nó não desaparece da memória da malha imediatamente; quando a query Grafana filtra `battery >= fnd_thresh` (padrão 5%), o painel FND registra o instante em que o nó "morre" para o teste.
+
+### Selecionando a rodada (run_id) no dashboard
+
+A variável `run` (tabela acima) lista automaticamente todos os `run_id` únicos gravados nos últimos 30 dias (ou conforme `range_start`/`range_stop`). Cada reset (em qualquer dos três modos) gera um novo UUID que é:
+1. Gerado no RTC do nó resgatador (em coordenação com NTP ou clock anterior).
+2. Transmitido via broadcast para toda a malha.
+3. Gravado no NVS de cada nó e publicado em cada leitura MQTT (tag `run`).
+4. Ingerido pelo bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) na tag `run` do InfluxDB.
+
+Para **isolar um ensaio específico** no dashboard:
+- Selecione o `run_id` no dropdown `run` (aparece como timestamp ou UUID da rodada).
+- Se várias rodadas existem no mesmo horário, use `range_start`/`range_stop` para estreitar a janela real (ex. `2026-06-20T14:00:00Z` … `2026-06-20T14:30:00Z`).
+
+### Cenário A (CHEIO) vs Cenário B (ESCALONADO) — quando usar
+
+**Cenário A — Reset CHEIO (5–10 s)**
+- Todos os nós começam com **100% de bateria**.
+- **Homogêneo**: mesmas condições iniciais para ambas as políticas.
+- **Uso na monografia**: comparação "fair" entre política 1 e política 2; isola o efeito do algoritmo sem confundidor de estado inicial.
+- Exemplo: "Política A mantém o FND por X minutos, política B por Y minutos, partindo de igualdade."
+
+**Cenário B — Reset ESCALONADO (>10 s)**
+- Nós têm bateria inicial: **[100%, 85%, 70%, 55%, 40%]** (por ordem de MAC).
+- **Heterogêneo**: simula uma malha que já sofreu desgaste desigual (nós periféricos descarregam mais cedo que centrais em topologias reais).
+- **Uso na monografia**: avalia resiliência sob condições de bateria já degradada; mostra se a política consegue "rebalancear" o consumo quando algum nó já chega fraco.
+- Exemplo: "Política A degrada-se quando nós periféricos chegam com <60% de bateria, política B mantém a distribuição mesmo com essa heterogeneidade."
+
+**Escolha recomendada:**
+- Se o foco é **algoritmo vs algoritmo**, use Cenário A (ambas políticas mesma base).
+- Se o foco é **robustez em malhas reais** (que já têm desgaste acumulado), use Cenário B.
+- Para cobertura completa na monografia, rode **ambas** e compare os gráficos de FND lado a lado.
 
 ## Lógica da query (resumo)
 
