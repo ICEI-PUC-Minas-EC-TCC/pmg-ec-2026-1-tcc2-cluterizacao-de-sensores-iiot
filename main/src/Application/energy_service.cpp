@@ -1,4 +1,5 @@
 #include "Application/energy_service.hpp"
+#include "Application/nvs_service.hpp"
 #include "esp_log.h"
 #include "utils.hpp"
 
@@ -10,6 +11,7 @@ static const char *TAG = "ENERGY_SERVICE";
 namespace service::application::energy {
 
 using controller::network::MacAddr;
+namespace nvs = service::application::nvs;
 
 // Initial budget in abstract units. Costs are calibrated relative to this.
 static constexpr uint32_t INITIAL_BUDGET   = 100'000;
@@ -27,7 +29,12 @@ static constexpr uint32_t TICK_PERIOD_MS   = 1000;
 // as invalid so the leader policy can fall back to round-robin.
 static constexpr uint32_t PEER_TTL_MS      = 10'000;
 
+// Persistência: grava no NVS quando o residual cai >= 1% do orçamento inicial.
+static constexpr uint32_t PERSIST_THRESHOLD = INITIAL_BUDGET / 100;
+static constexpr char     KEY_RESIDUAL[]    = "residual";
+
 static uint32_t      residual = INITIAL_BUDGET;
+static uint32_t      last_saved_residual = INITIAL_BUDGET;
 static utils::Timer  tick_timer;
 
 struct PeerSample {
@@ -51,10 +58,22 @@ static void decrement(uint32_t cost) {
     } else {
         residual -= cost;
     }
+
+    // residual só decresce e last_saved_residual >= residual, então a
+    // subtração é não-negativa.
+    if (last_saved_residual - residual >= PERSIST_THRESHOLD) {
+        nvs::set_u32(KEY_RESIDUAL, residual);
+        last_saved_residual = residual;
+    }
 }
 
 void init() {
     residual = INITIAL_BUDGET;
+    uint32_t saved = 0;
+    if (nvs::get_u32(KEY_RESIDUAL, &saved)) {
+        residual = saved;
+    }
+    last_saved_residual = residual;
     peers.clear();
     tick_timer.reset();
     ESP_LOGI(TAG, "Energy budget initialized: %u units", (unsigned)residual);

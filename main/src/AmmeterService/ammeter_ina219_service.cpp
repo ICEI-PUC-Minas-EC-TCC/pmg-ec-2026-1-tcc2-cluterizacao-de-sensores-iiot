@@ -6,6 +6,7 @@
 
 #ifdef CONFIG_AMMETER_BACKEND_INA219
 
+#include "AmmeterService/ammeter_persistence.hpp"
 #include "AmmeterService/ammeter_service.hpp"
 
 #include "driver/i2c_master.h"
@@ -139,6 +140,7 @@ void init() {
     last_measurement = {};
     last_measurement.remaining_mah = BATTERY_CAPACITY_MAH;
     last_measurement.battery_pct = 100.0f;
+    persistence::load(last_measurement, BATTERY_CAPACITY_MAH);
     last_sample_time_us = esp_timer_get_time();
     initialized = true;
 
@@ -238,6 +240,8 @@ void handler(void *arg) {
 
         last_sample_time_us = now;
         new_measurement_available = true;
+
+        persistence::maybe_persist(last_measurement, BATTERY_CAPACITY_MAH);
 
         ESP_LOGI(TAG, "I=%.2fmA V=%.3fV P=%.2fmW Rem=%.1f%%", filtered_ma,
                  vbus_v, power_mw, last_measurement.battery_pct);

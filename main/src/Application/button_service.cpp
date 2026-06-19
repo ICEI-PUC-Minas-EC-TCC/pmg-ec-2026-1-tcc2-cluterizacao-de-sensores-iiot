@@ -1,4 +1,5 @@
 #include "Application/button_service.hpp"
+#include "Application/nvs_service.hpp"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -13,10 +14,13 @@ static const char *TAG = "BUTTON_SERVICE";
 
 constexpr gpio_num_t nBOOT_BUTTON = GPIO_NUM_9;
 
-// Hold BOOT this long to force a soft reset. Useful on the bench when a node
-// gets stuck in a Wi-Fi scan loop or stale role state and the EN button on
-// the C3 SuperMini clone is too small to reach reliably.
-constexpr uint32_t LONG_PRESS_MS = 2000;
+// Gestos no BOOT, decididos na SOLTURA (precisamos distinguir as durações).
+// Útil na bancada: a EN do clone C3 SuperMini é pequena demais p/ alcançar
+// com confiabilidade.
+//   2–5 s  -> soft reset (reinicia)
+//   > 5 s  -> zera a energia persistida (bateria + orçamento) e reinicia
+constexpr uint32_t RESTART_PRESS_MS = 2000;
+constexpr uint32_t RESET_PRESS_MS = 5000;
 
 void init() {
     gpio_config_t config = {.pin_bit_mask = (1ULL << nBOOT_BUTTON),
@@ -32,7 +36,6 @@ void handler() {
     static utils::Timer poll_timer;
     static utils::Timer press_timer;
     static bool was_pressed = false;
-    static bool restart_armed = false;
 
     if (!poll_timer.hasElapsed(50)) {
         return;
@@ -44,18 +47,22 @@ void handler() {
     bool pressed = (gpio_get_level(nBOOT_BUTTON) == 0);
 
     if (pressed && !was_pressed) {
-        press_timer.reset();
-        restart_armed = true;
+        press_timer.reset(); // começou a pressionar
     }
 
-    if (pressed && restart_armed && press_timer.hasElapsed(LONG_PRESS_MS)) {
-        ESP_LOGW(TAG, "BOOT held %u ms — restarting", LONG_PRESS_MS);
-        restart_armed = false;
-        esp_restart();
-    }
-
-    if (!pressed) {
-        restart_armed = false;
+    // Decide o gesto na soltura, pela duração do hold.
+    if (!pressed && was_pressed) {
+        if (press_timer.hasElapsed(RESET_PRESS_MS)) {
+            ESP_LOGW(TAG,
+                     "BOOT segurado >= %u ms — zerando energia e reiniciando",
+                     RESET_PRESS_MS);
+            service::application::nvs::erase_energy();
+            esp_restart();
+        } else if (press_timer.hasElapsed(RESTART_PRESS_MS)) {
+            ESP_LOGW(TAG, "BOOT segurado >= %u ms — reiniciando",
+                     RESTART_PRESS_MS);
+            esp_restart();
+        }
     }
 
     was_pressed = pressed;
