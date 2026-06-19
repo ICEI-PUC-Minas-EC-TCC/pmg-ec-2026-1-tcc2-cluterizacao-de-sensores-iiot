@@ -147,9 +147,10 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload),
                  "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"LEADER\", "
-                 "\"policy\": \"%s\", \"measured_time\": \"%s\"}",
+                 "\"policy\": \"%s\", \"run\": \"%s\", \"measured_time\": \"%s\"}",
                  m.current_ma, m.battery_pct,
                  service::application::leader_policy::strategy_name(),
+                 service::application::run::id(),
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -168,9 +169,10 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload),
                  "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"MEMBER\", "
-                 "\"policy\": \"%s\", \"measured_time\": \"%s\"}",
+                 "\"policy\": \"%s\", \"run\": \"%s\", \"measured_time\": \"%s\"}",
                  current_ma, battery_pct,
                  service::application::leader_policy::strategy_name(),
+                 service::application::run::id(),
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
