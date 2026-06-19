@@ -24,6 +24,9 @@
 
 static const char *TAG = "APP_CONTROLLER";
 
+// Abaixo deste limiar de bateria MEDIDA o no' e' considerado morto.
+static constexpr float DEATH_THRESHOLD_PCT = 1.0f;
+
 static void handle_leader();
 static void handle_member();
 
@@ -67,6 +70,17 @@ void controller::application::handler(void *arg) {
         service::application::energy::tick();
         service::application::role::handler();
         service::application::sampling::handler();
+
+        // Morte simulada: assim que a bateria medida cruza o limiar, marca
+        // o no' como morto. O gating de publish/envio abaixo e o step-down
+        // em role_service cuidam de tira-lo da rede.
+        if (!service::application::role::is_dead()) {
+            auto mm = service::ammeter::get_last_measurement();
+            if (mm.battery_pct <= DEATH_THRESHOLD_PCT) {
+                service::application::role::mark_dead();
+            }
+        }
+
         if (service::network::has_received_rotate()) {
             service::application::role::on_rotate_received(
                 service::network::get_rotate_next_leader());
@@ -81,15 +95,20 @@ void controller::application::handler(void *arg) {
             esp_restart();
         }
 
-        switch (service::application::role::get_role()) {
-        case service::application::role::Role::LEADER:
-            handle_leader();
-            break;
-        case service::application::role::Role::MEMBER:
-            handle_member();
-            break;
-        default:
-            break;
+        if (service::application::role::is_dead()) {
+            // Morto: silencio total (nao publica como lider nem envia como
+            // membro). O step-down, se for lider, ocorre em role::handler().
+        } else {
+            switch (service::application::role::get_role()) {
+            case service::application::role::Role::LEADER:
+                handle_leader();
+                break;
+            case service::application::role::Role::MEMBER:
+                handle_member();
+                break;
+            default:
+                break;
+            }
         }
 
         // Linha unica de calibracao (~1s): casa a corrente do INA219 com o papel
