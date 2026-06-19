@@ -5,6 +5,7 @@
 #include "Application/energy_service.hpp"
 #include "Application/leader_policy.hpp"
 #include "Application/nvs_service.hpp"
+#include "Application/run_service.hpp"
 #include "Application/sampling_service.hpp"
 #include "Application/role_service.hpp"
 #include "LedService/led_controller.hpp"
@@ -48,6 +49,7 @@ void controller::application::init() {
     service::application::button::init();
     service::application::discover::init();
     service::application::energy::init();
+    service::application::run::init();
     service::application::role::init();
     service::application::sampling::init();
 
