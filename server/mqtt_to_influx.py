@@ -62,6 +62,7 @@ def on_message(client, userdata, msg):
         bateria = dados.get("battery_pct")
         papel = dados.get("role") or "UNKNOWN"
         policy = dados.get("policy") or "UNKNOWN"
+        run = dados.get("run") or "UNKNOWN"
         node = msg.topic.rsplit("/", 1)[-1]
 
         point = (
@@ -69,6 +70,7 @@ def on_message(client, userdata, msg):
             .tag("node", node)
             .tag("papel", papel)
             .tag("policy", policy)
+            .tag("run", run)
             .field("current_ma", float(corrente))
         )
         if bateria is not None:
