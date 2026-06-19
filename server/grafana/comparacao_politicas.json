@@ -109,7 +109,7 @@
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "refId": "A",
-          "query": "import \"join\"\n\n// Busca a serie de bateria de TODOS os nos, na janela real do teste.\n// Use range_start / range_stop (variaveis no topo) para cercar a janela real.\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\")\n\n// t0 = instante inicial de cada teste (1o ponto da politica, compartilhado entre os nos).\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\n// Junta o t0 da politica em cada leitura e converte _time para TEMPO DECORRIDO\n// (offset desde t0, ancorado no epoch 1970 -> 00:00 = inicio do teste).\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // No' mais fraco por politica em cada janela de tempo decorrido:\n  |> truncateTimeColumn(unit: ${bucket})\n  |> group(columns: [\"policy\", \"_time\"])\n  |> min()\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> keep(columns: [\"_time\", \"_value\", \"policy\"])"
+          "query": "import \"join\"\n\n// Busca a serie de bateria de TODOS os nos, na janela real do teste.\n// Use range_start / range_stop (variaveis no topo) para cercar a janela real.\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run == \"${run}\")\n\n// t0 = instante inicial de cada teste (1o ponto da politica, compartilhado entre os nos).\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\n// Junta o t0 da politica em cada leitura e converte _time para TEMPO DECORRIDO\n// (offset desde t0, ancorado no epoch 1970 -> 00:00 = inicio do teste).\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // No' mais fraco por politica em cada janela de tempo decorrido:\n  |> truncateTimeColumn(unit: ${bucket})\n  |> group(columns: [\"policy\", \"_time\"])\n  |> min()\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> keep(columns: [\"_time\", \"_value\", \"policy\"])"
         }
       ]
     },
@@ -149,7 +149,7 @@
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "refId": "A",
-          "query": "import \"join\"\n\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\")\n\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // 1o instante (tempo decorrido) em que QUALQUER no' cai ate' o limiar = FND.\n  |> filter(fn: (r) => r._value <= ${fnd_thresh})\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  // Converte o offset (ns desde o epoch) para MINUTOS.\n  |> map(fn: (r) => ({policy: r.policy, _value: float(v: uint(v: r._time)) / 60000000000.0}))\n  |> group(columns: [\"policy\"])"
+          "query": "import \"join\"\n\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run == \"${run}\")\n\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // 1o instante (tempo decorrido) em que QUALQUER no' cai ate' o limiar = FND.\n  |> filter(fn: (r) => r._value <= ${fnd_thresh})\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  // Converte o offset (ns desde o epoch) para MINUTOS.\n  |> map(fn: (r) => ({policy: r.policy, _value: float(v: uint(v: r._time)) / 60000000000.0}))\n  |> group(columns: [\"policy\"])"
         }
       ]
     }
@@ -203,6 +203,18 @@
         "query": "dados_esps",
         "current": { "text": "dados_esps", "value": "dados_esps" },
         "hide": 2
+      },
+      {
+        "name": "run",
+        "label": "Rodada (run)",
+        "description": "Rodada de teste (carimbada no reset). Default: a mais recente.",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket_influx}\", tag: \"run\")",
+        "refresh": 2,
+        "sort": 5,
+        "includeAll": false,
+        "current": {}
       }
     ]
   },

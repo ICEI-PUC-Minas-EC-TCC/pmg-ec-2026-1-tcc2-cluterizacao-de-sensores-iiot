@@ -44,6 +44,7 @@ as variáveis abaixo.
 | `bucket`       | `30s`         | Tamanho da janela de amostragem do nó mais fraco (`30s`, `1m`, `5m`). |
 | `fnd_thresh`   | `5`           | Bateria (%) na qual um nó é considerado "morto" para o FND. |
 | `bucket_influx`| `dados_esps`  | Nome do bucket no InfluxDB (oculto). |
+| `run`          | *(query)*     | Rodada de teste (carimbada no reset do BOOT). Lista os valores da tag `run` no bucket. |
 
 **Importante para isolar um único ensaio:** se você rodar vários testes da mesma política ao
 longo de semanas, `-30d` pega todos e o `t0` vira o do primeiro. Para cercar um ensaio
@@ -55,7 +56,7 @@ específico, ajuste `range_start`/`range_stop` para a janela real daquele dia (e
 O bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) grava cada leitura em InfluxedB:
 
 - measurement: `consumo`
-- tags: `node`, `papel`, `policy`  ← a tag `policy` (`energy` / `round_robin`) é o que separa os ensaios
+- tags: `node`, `papel`, `policy`, `run`  ← a tag `policy` (`energy` / `round_robin`) é o que separa os ensaios; `run` identifica a rodada (carimbada no reset)
 - fields: `current_ma`, `battery_pct`
 
 > A tag `policy` só existe em dados gravados pela versão atual do bridge. Garanta que o
