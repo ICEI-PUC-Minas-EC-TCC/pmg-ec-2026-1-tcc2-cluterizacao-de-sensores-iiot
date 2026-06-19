@@ -74,27 +74,27 @@ O firmware reconhece três faixas de tempo no botão de BOOT (hold contínuo), c
 | 5–10 s   | **Reset CHEIO** (Cenário A) — limpa NVS, todos os nós voltam com bateria em **100%**. | Ensaio homogêneo; todos começam com a mesma energia. |
 | >10 s    | **Reset ESCALONADO** (Cenário B) — limpa NVS, cada nó recebe bateria inicial conforme sua posição na lista **ordenada por MAC**: posição 1 → 100%, 2 → 85%, 3 → 70%, 4 → 55%, 5 → 40%. | Ensaio heterogêneo; simula rede já descarregada antes do teste. |
 
-Ao soltar o botão, o reset inicia: o nó publica via broadcast seu novo `run_id` (um UUID único da rodada) e transmite para toda a malha o scenario escolhido (CHEIO ou ESCALONADO).
+Ao soltar o botão, o reset inicia: o nó publica via broadcast seu novo `run_id` (o carimbo de tempo do RTC daquele reset, ex. `2026-06-20 14:00:00`) e transmite para toda a malha o scenario escolhido (CHEIO ou ESCALONADO).
 
 ### Morte simulada e FND
 
 Quando a bateria medida de um nó atinge **~1%** (limiar `DEATH_THRESHOLD_PCT`), o nó:
 - **Para de publicar** MQTT (não envia mais leituras de corrente/bateria).
-- **Recusa participar** da liderança de roteamento (não se oferece como roteador).
-- **Step-down** automático até ficar com apenas link direto ao concentrador (se houver).
+- **Recusa a liderança** — não se auto-elege; se for eleito por um peer com visão desatualizada, repassa o rodízio para outro nó.
+- **Faz step-down se estiver liderando ao morrer** — passa a liderança a um nó **vivo** (via ROTATE) antes de silenciar, para o uplink não morrer junto.
 
-Isso é **comportamento esperado e proposital** — não é um bug, mas a simulação de uma morte real por bateria. O nó não desaparece da memória da malha imediatamente; quando a query Grafana filtra `battery >= fnd_thresh` (padrão 5%), o painel FND registra o instante em que o nó "morre" para o teste.
+Isso é **comportamento esperado e proposital** — não é um bug, mas a simulação de uma morte real por bateria. O nó não desaparece da memória da malha imediatamente (os peers o expiram por TTL ao pararem de ouvi-lo). O painel FND usa a query que pega o 1º instante em que a bateria de algum nó cai **até** o limiar (`battery <= fnd_thresh`, padrão 5%) — é esse o instante de "morte" registrado para o teste.
 
 ### Selecionando a rodada (run_id) no dashboard
 
-A variável `run` (tabela acima) lista automaticamente todos os `run_id` únicos gravados nos últimos 30 dias (ou conforme `range_start`/`range_stop`). Cada reset (em qualquer dos três modos) gera um novo UUID que é:
-1. Gerado no RTC do nó resgatador (em coordenação com NTP ou clock anterior).
-2. Transmitido via broadcast para toda a malha.
+A variável `run` (tabela acima) lista automaticamente todos os `run_id` únicos gravados nos últimos 30 dias (ou conforme `range_start`/`range_stop`). Os resets de reset CHEIO e ESCALONADO geram um novo `run_id` que é:
+1. Gerado a partir do RTC do nó que disparou o reset (carimbo de tempo).
+2. Transmitido via broadcast para toda a malha (todos os nós passam a usar o mesmo `run_id`).
 3. Gravado no NVS de cada nó e publicado em cada leitura MQTT (tag `run`).
 4. Ingerido pelo bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) na tag `run` do InfluxDB.
 
 Para **isolar um ensaio específico** no dashboard:
-- Selecione o `run_id` no dropdown `run` (aparece como timestamp ou UUID da rodada).
+- Selecione o `run_id` no dropdown `run` (aparece como o carimbo de tempo da rodada).
 - Se várias rodadas existem no mesmo horário, use `range_start`/`range_stop` para estreitar a janela real (ex. `2026-06-20T14:00:00Z` … `2026-06-20T14:30:00Z`).
 
 ### Cenário A (CHEIO) vs Cenário B (ESCALONADO) — quando usar
