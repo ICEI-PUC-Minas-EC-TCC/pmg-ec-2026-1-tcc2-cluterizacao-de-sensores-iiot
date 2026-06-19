@@ -21,6 +21,7 @@ using controller::network::MacAddr;
 
 static Role    current_role = Role::UNDECIDED;
 static MacAddr leader_mac{};
+static bool dead = false;
 
 // Minimum time to wait for peer discovery before forcing an election.
 static constexpr uint32_t DISCOVERY_WINDOW_MS = 2000;
@@ -296,6 +297,17 @@ bool is_leader() {
 
 MacAddr get_leader_mac() {
     return leader_mac;
+}
+
+void mark_dead() {
+    if (!dead) {
+        dead = true;
+        ESP_LOGW(TAG, "Node DEAD (battery depleted) — leaving the network");
+    }
+}
+
+bool is_dead() {
+    return dead;
 }
 
 } // namespace service::application::role

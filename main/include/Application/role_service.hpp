@@ -16,6 +16,11 @@ void handler();
 
 Role get_role();
 bool is_leader();
+// Morte simulada: na bancada a fonte mantem o no' ligado mesmo com a
+// bateria medida zerada. Ao "morrer" (battery_pct <= limiar) o no' para de
+// participar: nao publica, nao envia, recusa lideranca. Latch ate' o reset.
+void mark_dead();
+bool is_dead();
 controller::network::MacAddr get_leader_mac();
 void on_rotate_received(controller::network::MacAddr next_leader);
 
