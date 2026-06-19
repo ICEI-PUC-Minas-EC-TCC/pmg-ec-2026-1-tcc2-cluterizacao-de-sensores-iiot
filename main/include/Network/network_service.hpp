@@ -13,6 +13,7 @@ enum class RxCommand : uint8_t {
     PING,
     READING,
     ROTATE,
+    RESET_ENERGY,
 
     SIZE,
 };
@@ -22,6 +23,7 @@ enum class TxCommand : uint8_t {
     PING,
     READING,
     ROTATE,
+    RESET_ENERGY,
 
     SIZE,
 };
@@ -60,6 +62,11 @@ void send_reading(controller::network::MacAddr dest_mac, float current_ma,
                   float battery_pct);
 void send_rotate(controller::network::MacAddr next_leader);
 
+// Broadcast a network-wide energy reset. Each peer that receives it erases its
+// persisted energy (battery + budget) and restarts. Best-effort over ESP-NOW:
+// the caller (button_service) repeats the broadcast a few times to cover loss.
+void send_reset_energy_broadcast();
+
 const std::vector<controller::network::MacAddr>& get_known_peers();
 
 bool has_received_reading();
@@ -69,5 +76,9 @@ controller::network::MacAddr get_received_sender();
 
 bool has_received_rotate();
 controller::network::MacAddr get_rotate_next_leader();
+
+// True (once) after a RESET_ENERGY broadcast was received from a peer; the app
+// then erases persisted energy and restarts. Mirrors has_received_rotate().
+bool has_received_reset_energy();
 
 } // namespace service::network

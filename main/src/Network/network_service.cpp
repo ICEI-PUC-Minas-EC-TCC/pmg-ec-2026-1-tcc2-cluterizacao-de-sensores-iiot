@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 namespace service::network {
 
@@ -29,14 +30,18 @@ static MacAddr received_sender{};
 static bool rotate_available = false;
 static MacAddr rotate_next_leader{};
 
+static bool reset_energy_available = false;
+
 void ping_received(Packet packet);
 void reading_received(Packet packet);
 void rotate_received(Packet packet);
+void reset_energy_received(Packet packet);
 
 void init() {
     register_rx_callback(ping_received, RxCommand::PING);
     register_rx_callback(reading_received, RxCommand::READING);
     register_rx_callback(rotate_received, RxCommand::ROTATE);
+    register_rx_callback(reset_energy_received, RxCommand::RESET_ENERGY);
 }
 
 void handler() {
@@ -193,6 +198,26 @@ void send_rotate(MacAddr next_leader) {
     // makes rotation reliable even when one node is channel-hopping due to
     // Wi-Fi reconnect backoff.
     driver::network::esp_now::send_msg(RxCommand::ROTATE, next_leader, data);
+}
+
+void reset_energy_received(Packet packet) {
+    register_sender_if_new(packet.src_mac);
+    reset_energy_available = true;
+}
+
+bool has_received_reset_energy() {
+    if (reset_energy_available) {
+        reset_energy_available = false;
+        return true;
+    }
+    return false;
+}
+
+void send_reset_energy_broadcast() {
+    // Command-only, no payload. Broadcast so every node in range hears it; the
+    // caller repeats it a few times to cover ESP-NOW broadcast loss (no ACK).
+    driver::network::esp_now::send_broadcast(RxCommand::RESET_ENERGY,
+                                             std::span<const uint8_t>{});
 }
 
 } // namespace service::network

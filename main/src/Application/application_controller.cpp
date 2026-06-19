@@ -3,6 +3,8 @@
 #include "Application/button_service.hpp"
 #include "Application/discover_service.hpp"
 #include "Application/energy_service.hpp"
+#include "Application/leader_policy.hpp"
+#include "Application/nvs_service.hpp"
 #include "Application/sampling_service.hpp"
 #include "Application/role_service.hpp"
 #include "LedService/led_controller.hpp"
@@ -12,6 +14,7 @@
 #include "RtcService/rtc_service.hpp"
 #include "TaskPriorities.hpp"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -69,6 +72,15 @@ void controller::application::handler(void *arg) {
                 service::network::get_rotate_next_leader());
         }
 
+        // Reset de energia em rede: um nó pediu (BOOT >5s) e propagou via
+        // ESP-NOW. Aqui agimos como no botão local: apaga a energia persistida
+        // e reinicia. Mesmo padrão do ROTATE (rede sinaliza, app age).
+        if (service::network::has_received_reset_energy()) {
+            ESP_LOGW(TAG, "RESET_ENERGY recebido — zerando energia e reiniciando");
+            service::application::nvs::erase_energy();
+            esp_restart();
+        }
+
         switch (service::application::role::get_role()) {
         case service::application::role::Role::LEADER:
             handle_leader();
@@ -114,8 +126,9 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload),
                  "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"LEADER\", "
-                 "\"measured_time\": \"%s\"}",
+                 "\"policy\": \"%s\", \"measured_time\": \"%s\"}",
                  m.current_ma, m.battery_pct,
+                 service::application::leader_policy::strategy_name(),
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);
@@ -134,8 +147,9 @@ static void handle_leader() {
         snprintf(payload, sizeof(payload),
                  "{\"current_ma\": %.1f, "
                  "\"battery_pct\": %.1f, \"role\": \"MEMBER\", "
-                 "\"measured_time\": \"%s\"}",
+                 "\"policy\": \"%s\", \"measured_time\": \"%s\"}",
                  current_ma, battery_pct,
+                 service::application::leader_policy::strategy_name(),
                  service::rtc::get_current_time().c_str());
 
         controller::mqtt::publish(topic, payload);

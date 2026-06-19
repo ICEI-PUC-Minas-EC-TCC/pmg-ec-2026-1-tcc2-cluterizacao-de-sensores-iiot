@@ -1,9 +1,12 @@
 #include "Application/button_service.hpp"
 #include "Application/nvs_service.hpp"
+#include "Network/network_service.hpp"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "hal/gpio_types.h"
 #include "soc/gpio_num.h"
 #include "utils.hpp"
@@ -54,8 +57,16 @@ void handler() {
     if (!pressed && was_pressed) {
         if (press_timer.hasElapsed(RESET_PRESS_MS)) {
             ESP_LOGW(TAG,
-                     "BOOT segurado >= %u ms — zerando energia e reiniciando",
+                     "BOOT segurado >= %u ms — reset de energia em REDE e "
+                     "reiniciando",
                      RESET_PRESS_MS);
+            // Propaga o reset para todos os nos: broadcast repetido (ESP-NOW
+            // nao tem ACK, entao repetimos para cobrir perdas). O delay entre
+            // envios tambem garante o flush do TX antes do esp_restart local.
+            for (int i = 0; i < 4; ++i) {
+                service::network::send_reset_energy_broadcast();
+                vTaskDelay(150 / portTICK_PERIOD_MS);
+            }
             service::application::nvs::erase_energy();
             esp_restart();
         } else if (press_timer.hasElapsed(RESTART_PRESS_MS)) {
