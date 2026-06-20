@@ -42,7 +42,7 @@
       }
     ]
   },
-  "description": "Comparacao das politicas de roteamento (energy vs round_robin) por tempo decorrido. O eixo X fica em torno de 1970-01-01 de proposito: o tempo e' normalizado para 'tempo desde o inicio de cada teste', entao 00:30 = 30 min de teste.",
+  "description": "Comparacao das politicas de roteamento (round_robin, energy, energy_cooldown) por tempo decorrido. Selecione um run por politica (mesmo cenario) na variavel 'run' (multi) para sobrepor as curvas. O eixo X fica em torno de 1970-01-01 de proposito: o tempo e' normalizado para 'tempo desde o inicio de cada run', entao 00:30 = 30 min de teste.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -52,7 +52,7 @@
   "panels": [
     {
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "description": "Bateria do no' mais fraco da rede a cada instante de tempo decorrido. Onde a linha toca 0 = FND (First Node Death) daquela politica. As duas curvas comecam juntas em 00:00 (inicio de cada teste), permitindo sobreposicao honesta.",
+      "description": "Bateria do no' mais fraco da rede a cada instante de tempo decorrido. Onde a linha toca 0 = FND (First Node Death) daquele run. Cada run (selecionado na variavel 'run') vira uma curva, rotulada pela sua politica, comecando em 00:00 (inicio daquele run).",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -109,13 +109,13 @@
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "refId": "A",
-          "query": "import \"join\"\n\n// Busca a serie de bateria de TODOS os nos, na janela real do teste.\n// Use range_start / range_stop (variaveis no topo) para cercar a janela real.\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run == \"${run}\")\n\n// t0 = instante inicial de cada teste (1o ponto da politica, compartilhado entre os nos).\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\n// Junta o t0 da politica em cada leitura e converte _time para TEMPO DECORRIDO\n// (offset desde t0, ancorado no epoch 1970 -> 00:00 = inicio do teste).\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // No' mais fraco por politica em cada janela de tempo decorrido:\n  |> truncateTimeColumn(unit: ${bucket})\n  |> group(columns: [\"policy\", \"_time\"])\n  |> min()\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> keep(columns: [\"_time\", \"_value\", \"policy\"])"
+          "query": "import \"join\"\n\n// Busca a serie de bateria de TODOS os nos, nos runs selecionados.\n// Use range_start / range_stop (variaveis no topo) para cercar a janela real,\n// e a variavel 'run' (multi) para escolher um run por politica.\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run =~ /^${run:regex}$/)\n\n// t0 = instante inicial de cada RUN (1o ponto, compartilhado entre os nos do run).\n// Agrupar por run (e nao por policy) permite sobrepor varios runs / politicas.\nstarts = raw\n  |> group(columns: [\"run\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"run\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\n// Junta o t0 do run em cada leitura e converte _time para TEMPO DECORRIDO\n// (offset desde t0, ancorado no epoch 1970 -> 00:00 = inicio do run).\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.run == r.run,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // No' mais fraco do run em cada janela de tempo decorrido:\n  |> truncateTimeColumn(unit: ${bucket})\n  |> group(columns: [\"run\", \"_time\"])\n  |> min()\n  |> group(columns: [\"run\"])\n  |> sort(columns: [\"_time\"])\n  |> keep(columns: [\"_time\", \"_value\", \"run\", \"policy\"])"
         }
       ]
     },
     {
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "description": "FND (First Node Death): minutos de tempo decorrido ate' o primeiro no' cruzar o limiar de bateria (fnd_thresh). Quanto MAIOR, melhor a politica mantem a rede viva.",
+      "description": "FND (First Node Death): minutos de tempo decorrido ate' o primeiro no' cruzar o limiar de bateria (fnd_thresh), por run selecionado (rotulado pela politica). Quanto MAIOR, melhor a politica mantem a rede viva.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -149,7 +149,7 @@
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "refId": "A",
-          "query": "import \"join\"\n\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run == \"${run}\")\n\nstarts = raw\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"policy\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.policy == r.policy,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // 1o instante (tempo decorrido) em que QUALQUER no' cai ate' o limiar = FND.\n  |> filter(fn: (r) => r._value <= ${fnd_thresh})\n  |> group(columns: [\"policy\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  // Converte o offset (ns desde o epoch) para MINUTOS.\n  |> map(fn: (r) => ({policy: r.policy, _value: float(v: uint(v: r._time)) / 60000000000.0}))\n  |> group(columns: [\"policy\"])"
+          "query": "import \"join\"\n\nraw = from(bucket: \"${bucket_influx}\")\n  |> range(start: ${range_start}, stop: ${range_stop})\n  |> filter(fn: (r) => r._measurement == \"consumo\" and r._field == \"battery_pct\" and r.run =~ /^${run:regex}$/)\n\nstarts = raw\n  |> group(columns: [\"run\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  |> keep(columns: [\"run\", \"_time\"])\n  |> rename(columns: {_time: \"_t0\"})\n  |> group()\n\njoin.left(\n  left: raw |> group(),\n  right: starts,\n  on: (l, r) => l.run == r.run,\n  as: (l, r) => ({l with _t0: r._t0}),\n)\n  |> map(fn: (r) => ({r with _time: time(v: uint(v: r._time) - uint(v: r._t0))}))\n  // 1o instante (tempo decorrido) em que QUALQUER no' do run cai ate' o limiar = FND.\n  |> filter(fn: (r) => r._value <= ${fnd_thresh})\n  |> group(columns: [\"run\"])\n  |> sort(columns: [\"_time\"])\n  |> first()\n  // Converte o offset (ns desde o epoch) para MINUTOS.\n  |> map(fn: (r) => ({run: r.run, policy: r.policy, _value: float(v: uint(v: r._time)) / 60000000000.0}))\n  |> group(columns: [\"run\"])"
         }
       ]
     }
@@ -207,13 +207,15 @@
       {
         "name": "run",
         "label": "Rodada (run)",
-        "description": "Rodada de teste (carimbada no reset). Default: a mais recente.",
+        "description": "Rodada(s) de teste (carimbadas no reset). Multi-selecao: escolha um run por politica (mesmo cenario) para sobrepor as curvas.",
         "type": "query",
         "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
         "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket_influx}\", tag: \"run\")",
         "refresh": 2,
         "sort": 5,
-        "includeAll": false,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
         "current": {}
       }
     ]
@@ -223,6 +225,6 @@
   "timezone": "utc",
   "title": "Comparacao de politicas - bateria por tempo decorrido",
   "uid": "tcc-politicas-energia",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

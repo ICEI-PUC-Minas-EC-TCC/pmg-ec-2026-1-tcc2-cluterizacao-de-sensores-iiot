@@ -1,17 +1,24 @@
-# Dashboard Grafana — comparação de políticas (energy vs round_robin)
+# Dashboard Grafana — comparação de políticas (round_robin / energy / energy_cooldown)
 
 Compara as políticas de roteamento pela **bateria ao longo do tempo decorrido**, com as
-duas curvas sobrepostas começando juntas em `00:00`. Pensado para a monografia.
+curvas sobrepostas começando juntas em `00:00`. Pensado para a monografia.
+
+Suporta as **três** políticas. Como a política é escolha de *compile-time*, cada ensaio
+(reflash) vira um `run` distinto. A variável `run` é **multi-seleção**: escolha um `run`
+por política — todos do **mesmo cenário** (A ou B) — para sobrepor as curvas. Cada curva é
+rotulada pela `policy` daquele `run`.
 
 Arquivo: [`comparacao_politicas.json`](comparacao_politicas.json) — pronto para importar.
 
 ## Painéis
 
-1. **Bateria do nó mais fraco por política (tempo decorrido)** — uma linha por política,
-   mostrando, a cada instante, a bateria do nó mais fraco da rede (o que determina o FND).
-   Onde a linha toca `0` (ou o limiar), aquela política sofreu o *First Node Death*.
+1. **Bateria do nó mais fraco por política (tempo decorrido)** — uma linha por `run`
+   selecionado (rotulada pela política), mostrando, a cada instante, a bateria do nó mais
+   fraco da rede (o que determina o FND). Onde a linha toca `0` (ou o limiar), aquele ensaio
+   sofreu o *First Node Death*.
 2. **FND por política** — número direto, em minutos de teste, até o primeiro nó cruzar o
-   limiar de bateria. Maior = política mantém a rede viva por mais tempo.
+   limiar de bateria, um por `run` selecionado. Maior = política mantém a rede viva por mais
+   tempo.
 
 ## Como importar
 
@@ -44,11 +51,13 @@ as variáveis abaixo.
 | `bucket`       | `30s`         | Tamanho da janela de amostragem do nó mais fraco (`30s`, `1m`, `5m`). |
 | `fnd_thresh`   | `5`           | Bateria (%) na qual um nó é considerado "morto" para o FND. |
 | `bucket_influx`| `dados_esps`  | Nome do bucket no InfluxDB (oculto). |
-| `run`          | *(query)*     | Rodada de teste (carimbada no reset do BOOT). Lista os valores da tag `run` no bucket. |
+| `run`          | *(query, multi)* | Rodada(s) de teste (carimbadas no reset do BOOT). **Multi-seleção**: escolha um `run` por política (mesmo cenário) para sobrepor as curvas. `All` (= `.*`) traz todos os runs da janela real. |
 
-**Importante para isolar um único ensaio:** se você rodar vários testes da mesma política ao
-longo de semanas, `-30d` pega todos e o `t0` vira o do primeiro. Para cercar um ensaio
-específico, ajuste `range_start`/`range_stop` para a janela real daquele dia (ex.
+**Importante para isolar os ensaios certos:** o `t0` é calculado **por `run`** (cada ensaio
+alinha em `00:00` pelo seu próprio início), então sobrepor políticas é só selecionar os
+`run` corretos na variável `run`. Para comparar as 3 políticas de forma justa, selecione os
+**3 `run` do mesmo cenário** (ex.: os três Cenário A). Se a lista de `run` ficar grande,
+estreite `range_start`/`range_stop` para a janela real daquele dia (ex.
 `2026-06-20T14:00:00Z` … `2026-06-20T22:00:00Z`).
 
 ## De onde vêm os dados
@@ -56,7 +65,7 @@ específico, ajuste `range_start`/`range_stop` para a janela real daquele dia (e
 O bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) grava cada leitura em InfluxedB:
 
 - measurement: `consumo`
-- tags: `node`, `papel`, `policy`, `run`  ← a tag `policy` (`energy` / `round_robin`) é o que separa os ensaios; `run` identifica a rodada (carimbada no reset)
+- tags: `node`, `papel`, `policy`, `run`  ← a tag `policy` (`round_robin` / `energy` / `energy_cooldown`) rotula a curva; `run` identifica a rodada (carimbada no reset) e é o que separa os ensaios no dashboard
 - fields: `current_ma`, `battery_pct`
 
 > A tag `policy` só existe em dados gravados pela versão atual do bridge. Garanta que o
@@ -94,33 +103,36 @@ A variável `run` (tabela acima) lista automaticamente todos os `run_id` únicos
 4. Ingerido pelo bridge [`../mqtt_to_influx.py`](../mqtt_to_influx.py) na tag `run` do InfluxDB.
 
 Para **isolar um ensaio específico** no dashboard:
-- Selecione o `run_id` no dropdown `run` (aparece como o carimbo de tempo da rodada).
+- Selecione o(s) `run_id` no dropdown `run` (aparece como o carimbo de tempo da rodada). É **multi-seleção**: marque um `run` por política para sobrepor as curvas.
 - Se várias rodadas existem no mesmo horário, use `range_start`/`range_stop` para estreitar a janela real (ex. `2026-06-20T14:00:00Z` … `2026-06-20T14:30:00Z`).
+
+**Comparando as 3 políticas (round_robin / energy / energy_cooldown):** rode os 3 ensaios do mesmo cenário (cada um gera seu `run_id`) e, no dashboard, marque os **3 `run_id`** no dropdown `run`. As 3 curvas aparecem sobrepostas, cada uma rotulada pela sua política, e o painel FND mostra 3 valores lado a lado.
 
 ### Cenário A (CHEIO) vs Cenário B (ESCALONADO) — quando usar
 
 **Cenário A — Reset CHEIO (5–10 s)**
-- Todos os nós começam com **100% de bateria**.
-- **Homogêneo**: mesmas condições iniciais para ambas as políticas.
-- **Uso na monografia**: comparação "fair" entre política 1 e política 2; isola o efeito do algoritmo sem confundidor de estado inicial.
-- Exemplo: "Política A mantém o FND por X minutos, política B por Y minutos, partindo de igualdade."
+- Todos os 5 nós começam com **100% de bateria**.
+- **Homogêneo**: mesmas condições iniciais para as três políticas.
+- **Uso na monografia**: comparação "fair" entre as políticas; isola o efeito do algoritmo sem confundidor de estado inicial.
+- Exemplo: "round_robin mantém o FND por X min, energy por Y min, energy_cooldown por Z min, partindo de igualdade."
 
 **Cenário B — Reset ESCALONADO (>10 s)**
-- Nós têm bateria inicial: **[100%, 85%, 70%, 55%, 40%]** (por ordem de MAC).
+- Os 5 nós têm bateria inicial: **[100%, 85%, 70%, 55%, 40%]** (por ordem de MAC — com 5 ESPs cada um pega exatamente um nível).
 - **Heterogêneo**: simula uma malha que já sofreu desgaste desigual (nós periféricos descarregam mais cedo que centrais em topologias reais).
 - **Uso na monografia**: avalia resiliência sob condições de bateria já degradada; mostra se a política consegue "rebalancear" o consumo quando algum nó já chega fraco.
 - Exemplo: "Política A degrada-se quando nós periféricos chegam com <60% de bateria, política B mantém a distribuição mesmo com essa heterogeneidade."
 
 **Escolha recomendada:**
-- Se o foco é **algoritmo vs algoritmo**, use Cenário A (ambas políticas mesma base).
+- Se o foco é **algoritmo vs algoritmo**, use Cenário A (as três políticas na mesma base).
 - Se o foco é **robustez em malhas reais** (que já têm desgaste acumulado), use Cenário B.
-- Para cobertura completa na monografia, rode **ambas** e compare os gráficos de FND lado a lado.
+- Para cobertura completa na monografia, rode os **6 ensaios** (3 políticas × 2 cenários) e compare os gráficos de FND lado a lado.
 
 ## Lógica da query (resumo)
 
-`from() |> range(janela real)` → acha `t0` por política (`group by policy |> sort |> first`)
+`from() |> range(janela real)` → acha `t0` por **run** (`group by run |> sort |> first`)
 → `join.left` injeta `t0` em cada leitura → `map` reescreve `_time = _time - t0` (epoch) →
-nó mais fraco por bucket (`truncateTimeColumn |> group(policy,_time) |> min`). O FND filtra
-`battery <= fnd_thresh`, pega o `first` por política e converte o offset para minutos.
+nó mais fraco por bucket (`truncateTimeColumn |> group(run,_time) |> min`). O FND filtra
+`battery <= fnd_thresh`, pega o `first` por run e converte o offset para minutos. A coluna
+`policy` é mantida em cada série só para rotular as curvas (`displayName`).
 
 Queries validadas contra InfluxDB **v2.8.0** (requer o pacote Flux `join`, presente nessa versão).
