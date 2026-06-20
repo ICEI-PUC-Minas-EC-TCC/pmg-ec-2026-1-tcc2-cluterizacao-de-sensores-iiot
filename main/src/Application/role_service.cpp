@@ -147,7 +147,7 @@ static bool is_zero_mac(const MacAddr &m) {
     return memcmp(m.data(), zero, 6) == 0;
 }
 
-void on_leader_announced(MacAddr announced_leader) {
+void on_leader_announced(MacAddr announced_leader, MacAddr sender) {
     // Sender is UNDECIDED — nothing to learn.
     if (is_zero_mac(announced_leader)) {
         return;
@@ -190,7 +190,25 @@ void on_leader_announced(MacAddr announced_leader) {
         }
     }
 
-    // LEADER: trust local state; ignore announcements from stale peers.
+    // LEADER: normally trust local state. But a *stable* leader that hears
+    // another node announce *itself* as leader (announced == sender) has two
+    // uplinks running at once (split-brain) — both drain battery and corrupt
+    // the energy experiment, and nothing else ever breaks a leader out of the
+    // LEADER role except a term-based rotation. Resolve with the same
+    // deterministic rule as elect(): the higher MAC steps down to MEMBER, the
+    // lower-MAC leader stays, and the cluster reconverges within one PING
+    // period. Requiring announced == sender stops a stale MEMBER advertising an
+    // old leader from demoting the real one. Skipped while stepping_down: there
+    // the node is already handing off and announces its successor on purpose.
+    if (current_role == Role::LEADER && !stepping_down &&
+        memcmp(announced_leader.data(), sender.data(), 6) == 0 &&
+        memcmp(own_mac.data(), announced_leader.data(), 6) > 0) {
+        ESP_LOGW(TAG, "Split-brain detected — yielding to lower-MAC leader " MACSTR,
+                 MAC2STR(announced_leader.data()));
+        leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
+        set_role(Role::MEMBER);
+    }
 }
 
 void on_rotate_received(MacAddr next_leader) {

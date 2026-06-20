@@ -76,7 +76,7 @@ void ping_received(Packet packet) {
     MacAddr sender{};
     memcpy(sender.data(), packet.src_mac, sizeof(sender));
 
-    service::application::role::on_leader_announced(announced);
+    service::application::role::on_leader_announced(announced, sender);
     service::application::energy::on_peer_energy(sender,
                                                  payload.residual_energy);
 }
