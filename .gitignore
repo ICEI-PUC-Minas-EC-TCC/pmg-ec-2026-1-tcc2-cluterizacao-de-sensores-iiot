@@ -72,3 +72,22 @@ compile_commands.json
 .env
 .env.*
 !.env.example
+# Logs de monitor dos ESPs (gerados pelo flash_all.sh)
+logs/
+
+# Documentos do TCC
+*.pdf
+*.PDF
+
+# Saída gerada da análise (figuras regeneráveis pela CLI)
+analysis/out/
+
+# Figuras geradas localmente em lote (regeneráveis; não versionar)
+resultados/
+
+*.db
+docs/superpowers/*
+analysis/conformance/oracle/build/
+
+# Token de escrita do InfluxDB (NAO versionar)
+server/.influx_token

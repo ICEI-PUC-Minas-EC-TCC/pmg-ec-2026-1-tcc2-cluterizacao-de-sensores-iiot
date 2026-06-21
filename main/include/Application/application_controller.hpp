@@ -1,11 +1,8 @@
-#ifndef APPLICATION_CONTROLLER_H
-#define APPLICATION_CONTROLLER_H
+#pragma once
 
-namespace controller::application{
+namespace controller::application {
 
 void init();
 void handler(void *arg);
 
-}
-
-#endif
+} // namespace controller::application

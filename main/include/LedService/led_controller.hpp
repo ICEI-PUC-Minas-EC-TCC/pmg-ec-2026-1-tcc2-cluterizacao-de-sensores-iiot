@@ -1,7 +1,6 @@
-#ifndef LED_CONTROLLER_H
-#define LED_CONTROLLER_H
+#pragma once
 
-namespace controller::led{
+namespace controller::led {
 
 typedef enum { LED_CMD_SET } led_cmd_type_t;
 
@@ -15,6 +14,4 @@ void handler(void *arg);
 
 void set_status(bool value);
 
-}
-
-#endif
+} // namespace controller::led
