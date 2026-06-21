@@ -88,3 +88,6 @@ resultados/
 *.db
 docs/superpowers/*
 analysis/conformance/oracle/build/
+
+# Token de escrita do InfluxDB (NAO versionar)
+server/.influx_token

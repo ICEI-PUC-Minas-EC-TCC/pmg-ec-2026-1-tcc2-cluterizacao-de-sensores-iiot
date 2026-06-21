@@ -60,4 +60,13 @@ void maybe_persist(const Measurement &m, float capacity_mah) {
              m.battery_pct);
 }
 
+void persist_reset_pct(float pct, float capacity_mah) {
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    float consumed = capacity_mah * (1.0f - pct / 100.0f);
+    nvs::set_float(KEY_MAH, consumed);
+    last_saved_mah = consumed;
+    ESP_LOGI(TAG, "persist_reset_pct: consumed_mah <- %.1f (%.0f%%)", consumed, pct);
+}
+
 } // namespace service::ammeter::persistence

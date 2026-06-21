@@ -250,6 +250,8 @@ bool has_new_measurement() {
   return true;
 }
 
+float get_battery_capacity_mah() { return BATTERY_CAPACITY_MAH; }
+
 } // namespace service::ammeter
 
 #endif // CONFIG_AMMETER_BACKEND_INA219

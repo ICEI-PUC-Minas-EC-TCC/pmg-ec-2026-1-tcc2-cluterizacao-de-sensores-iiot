@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 namespace service::network {
 
@@ -29,14 +30,20 @@ static MacAddr received_sender{};
 static bool rotate_available = false;
 static MacAddr rotate_next_leader{};
 
+static bool reset_energy_available = false;
+static ResetScenario reset_scenario = ResetScenario::FULL;
+static char reset_run_id[24] = "UNKNOWN";
+
 void ping_received(Packet packet);
 void reading_received(Packet packet);
 void rotate_received(Packet packet);
+void reset_energy_received(Packet packet);
 
 void init() {
     register_rx_callback(ping_received, RxCommand::PING);
     register_rx_callback(reading_received, RxCommand::READING);
     register_rx_callback(rotate_received, RxCommand::ROTATE);
+    register_rx_callback(reset_energy_received, RxCommand::RESET_ENERGY);
 }
 
 void handler() {
@@ -69,7 +76,7 @@ void ping_received(Packet packet) {
     MacAddr sender{};
     memcpy(sender.data(), packet.src_mac, sizeof(sender));
 
-    service::application::role::on_leader_announced(announced);
+    service::application::role::on_leader_announced(announced, sender);
     service::application::energy::on_peer_energy(sender,
                                                  payload.residual_energy);
 }
@@ -194,5 +201,40 @@ void send_rotate(MacAddr next_leader) {
     // Wi-Fi reconnect backoff.
     driver::network::esp_now::send_msg(RxCommand::ROTATE, next_leader, data);
 }
+
+void reset_energy_received(Packet packet) {
+    register_sender_if_new(packet.src_mac);
+    ResetEnergyPayload payload{};
+    memcpy(&payload, packet.data, sizeof(payload));
+    reset_scenario = (payload.scenario == (uint8_t)ResetScenario::STAGGERED)
+                         ? ResetScenario::STAGGERED
+                         : ResetScenario::FULL;
+    payload.run_id[sizeof(payload.run_id) - 1] = '\0';
+    strncpy(reset_run_id, payload.run_id, sizeof(reset_run_id) - 1);
+    reset_run_id[sizeof(reset_run_id) - 1] = '\0';
+    reset_energy_available = true;
+}
+
+bool has_received_reset_energy() {
+    if (reset_energy_available) {
+        reset_energy_available = false;
+        return true;
+    }
+    return false;
+}
+
+void send_reset_energy_broadcast(ResetScenario scenario, const char *run_id) {
+    ResetEnergyPayload payload{};
+    payload.scenario = (uint8_t)scenario;
+    strncpy(payload.run_id, run_id, sizeof(payload.run_id) - 1);
+    payload.run_id[sizeof(payload.run_id) - 1] = '\0';
+
+    std::array<uint8_t, sizeof(ResetEnergyPayload)> data{};
+    memcpy(data.data(), &payload, sizeof(payload));
+    driver::network::esp_now::send_broadcast(RxCommand::RESET_ENERGY, data);
+}
+
+ResetScenario get_reset_scenario() { return reset_scenario; }
+const char *get_reset_run_id() { return reset_run_id; }
 
 } // namespace service::network

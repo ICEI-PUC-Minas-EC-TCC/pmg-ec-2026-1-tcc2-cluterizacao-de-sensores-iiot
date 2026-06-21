@@ -21,6 +21,7 @@ using controller::network::MacAddr;
 
 static Role    current_role = Role::UNDECIDED;
 static MacAddr leader_mac{};
+static bool dead = false;
 
 // Minimum time to wait for peer discovery before forcing an election.
 static constexpr uint32_t DISCOVERY_WINDOW_MS = 2000;
@@ -146,7 +147,7 @@ static bool is_zero_mac(const MacAddr &m) {
     return memcmp(m.data(), zero, 6) == 0;
 }
 
-void on_leader_announced(MacAddr announced_leader) {
+void on_leader_announced(MacAddr announced_leader, MacAddr sender) {
     // Sender is UNDECIDED — nothing to learn.
     if (is_zero_mac(announced_leader)) {
         return;
@@ -189,7 +190,25 @@ void on_leader_announced(MacAddr announced_leader) {
         }
     }
 
-    // LEADER: trust local state; ignore announcements from stale peers.
+    // LEADER: normally trust local state. But a *stable* leader that hears
+    // another node announce *itself* as leader (announced == sender) has two
+    // uplinks running at once (split-brain) — both drain battery and corrupt
+    // the energy experiment, and nothing else ever breaks a leader out of the
+    // LEADER role except a term-based rotation. Resolve with the same
+    // deterministic rule as elect(): the higher MAC steps down to MEMBER, the
+    // lower-MAC leader stays, and the cluster reconverges within one PING
+    // period. Requiring announced == sender stops a stale MEMBER advertising an
+    // old leader from demoting the real one. Skipped while stepping_down: there
+    // the node is already handing off and announces its successor on purpose.
+    if (current_role == Role::LEADER && !stepping_down &&
+        memcmp(announced_leader.data(), sender.data(), 6) == 0 &&
+        memcmp(own_mac.data(), announced_leader.data(), 6) > 0) {
+        ESP_LOGW(TAG, "Split-brain detected — yielding to lower-MAC leader " MACSTR,
+                 MAC2STR(announced_leader.data()));
+        leader_mac = announced_leader;
+        leader_policy::on_became_leader(announced_leader);
+        set_role(Role::MEMBER);
+    }
 }
 
 void on_rotate_received(MacAddr next_leader) {
@@ -203,6 +222,19 @@ void on_rotate_received(MacAddr next_leader) {
     }
 
     MacAddr own_mac = get_own_mac();
+
+    // Um no' morto eleito por engano (peer ainda nao expirou nosso MAC):
+    // nao assume; reenvia o rodizio para o proximo da politica.
+    if (dead && memcmp(own_mac.data(), next_leader.data(), 6) == 0) {
+        auto    nodes = sorted_cluster();
+        MacAddr next  = leader_policy::pick_next_leader(nodes, own_mac);
+        if (memcmp(next.data(), own_mac.data(), 6) != 0) {
+            ESP_LOGW(TAG, "DEAD node elected — re-rotating to " MACSTR,
+                     MAC2STR(next.data()));
+            service::network::send_rotate(next);
+        }
+        return;
+    }
 
     leader_mac = next_leader;
     leader_policy::on_became_leader(next_leader);
@@ -224,6 +256,24 @@ void handler() {
         isolation_timer.hasElapsed(ISOLATION_TIMEOUT_MS)) {
         ESP_LOGE(TAG, "Isolated for %u ms — restarting", ISOLATION_TIMEOUT_MS);
         esp_restart();
+    }
+
+    // Lider que acabou de morrer: inicia step-down imediato para um peer
+    // (idealmente vivo; peers mortos silenciam e expiram do cluster). Sem
+    // isso o uplink morreria junto com o no'.
+    if (dead && current_role == Role::LEADER && !stepping_down) {
+        auto    nodes = sorted_cluster();
+        MacAddr own   = get_own_mac();
+        MacAddr next  = leader_policy::pick_next_leader(nodes, own);
+        if (memcmp(next.data(), own.data(), 6) != 0) {
+            ESP_LOGW(TAG, "DEAD leader — handing off to " MACSTR, MAC2STR(next.data()));
+            service::network::send_rotate(next);
+            pending_next_leader = next;
+            rotate_retries_left = ROTATE_RETRIES;
+            rotate_retry_timer.reset();
+            stepping_down = true;
+        }
+        // Sem peer distinto (rede acabou): permanece e silencia.
     }
 
     if (current_role == Role::UNDECIDED) {
@@ -296,6 +346,26 @@ bool is_leader() {
 
 MacAddr get_leader_mac() {
     return leader_mac;
+}
+
+void mark_dead() {
+    if (!dead) {
+        dead = true;
+        ESP_LOGW(TAG, "Node DEAD (battery depleted) — leaving the network");
+    }
+}
+
+bool is_dead() {
+    return dead;
+}
+
+int own_rank() {
+    auto nodes = sorted_cluster();
+    MacAddr own = get_own_mac();
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (memcmp(nodes[i].data(), own.data(), 6) == 0) return (int)i;
+    }
+    return 0;
 }
 
 } // namespace service::application::role

@@ -22,6 +22,10 @@ void tick();
 
 uint32_t get_residual();
 
+// Reset de bancada: grava o residual-alvo (pct de INITIAL_BUDGET) no NVS.
+// Usado pelo fluxo de reset antes do restart.
+void persist_reset_pct(float pct);
+
 // Peer table updated from PingPayload.residual_energy. Returns 0 (and a
 // false `valid` out-flag) if no fresh sample is available for that MAC.
 void on_peer_energy(controller::network::MacAddr peer, uint32_t residual);

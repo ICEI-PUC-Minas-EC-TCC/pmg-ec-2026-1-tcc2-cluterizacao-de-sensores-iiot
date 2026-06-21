@@ -68,6 +68,31 @@ void set_u32(const char *key, uint32_t value) {
     nvs_close(handle);
 }
 
+bool get_str(const char *key, char *out, size_t out_len) {
+    nvs_handle_t handle;
+    if (nvs_open(NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return false;
+    }
+    size_t len = out_len;
+    esp_err_t err = nvs_get_str(handle, key, out, &len);
+    nvs_close(handle);
+    return err == ESP_OK;
+}
+
+void set_str(const char *key, const char *value) {
+    nvs_handle_t handle;
+    if (nvs_open(NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    esp_err_t err = nvs_set_str(handle, key, value);
+    if (err == ESP_OK) {
+        nvs_commit(handle);
+    } else {
+        ESP_LOGW(TAG, "set_str(%s) falhou: %s", key, esp_err_to_name(err));
+    }
+    nvs_close(handle);
+}
+
 void erase_energy() {
     nvs_handle_t handle;
     if (nvs_open(NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {

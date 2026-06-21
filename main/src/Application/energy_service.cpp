@@ -117,4 +117,13 @@ uint32_t get_peer_residual(MacAddr peer, bool *valid) {
     return it->second.residual;
 }
 
+void persist_reset_pct(float pct) {
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    uint32_t target = (uint32_t)((INITIAL_BUDGET * pct) / 100.0f);
+    nvs::set_u32(KEY_RESIDUAL, target);
+    ESP_LOGI(TAG, "persist_reset_pct: residual <- %u (%.0f%%)",
+             (unsigned)target, pct);
+}
+
 } // namespace service::application::energy
